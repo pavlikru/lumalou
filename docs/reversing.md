@@ -23,7 +23,7 @@ anyone's code.
 |---|---|
 | Unpack APKs | `unzip` / `apktool` |
 | Decompile Java/Kotlin | `jadx` |
-| Reverse the native crypto lib | Ghidra, plus an ARM emulator (`unicorn` / `qemu-user`) to run exported functions |
+| Reverse the native crypto lib | Ghidra, plus **Unicorn** (ARM64) to run the library's own exported functions |
 | Live GATT + control | Python with [`bleak`](https://github.com/hbldh/bleak) and [`cryptography`](https://cryptography.io) |
 | Capture on-air traffic | Android **btsnoop HCI** log → Wireshark |
 
@@ -126,19 +126,33 @@ The handshake is a local ECDH:
 2. Generate an ephemeral P-256 keypair. Compute `shared = ECDH(app_priv, device_pub)` — the 32-byte
    X coordinate.
 3. **Stretch it into a session key.** This was the hardest single fact to pin down, and it lives in
-   the native lib, not the Java: **100 rounds** of AES-128-CTR over the shared secret in place, each
-   round keyed with the fixed 16-byte constant
-   `00 00 00 00 00 00 00 00 00 6d 61 74 74 65 6c 00` (nine `00`, the ASCII `"mattel"`, one `00`),
-   with the CTR counter advancing between rounds. The first 16 bytes of the result are the
-   AES-128 data-channel key.
+   the native lib, not the Java: **100 rounds** of AES-128-CTR, each round re-encrypting the 32-byte
+   secret in place. Per round the **key is the first 16 bytes of the current secret**, and the
+   **IV/counter block** is the fixed pattern `00×7 | round | 00 | "mattel" | 00` — seven zero bytes,
+   the round index `0…99`, a zero, the ASCII `6d 61 74 74 65 6c`, and a final zero. After 100 rounds
+   the first 16 bytes of the result are the AES-128 data-channel key. Note the `"mattel"` bytes live
+   in the **IV**, not the key; at round 0 that IV reads `00×9 | "mattel" | 00`. (This is the same
+   derivation written from the wire's point of view in [`protocol.md`](protocol.md).)
 4. Write `app_pubkey_compressed(33) || app_nonce(4)` to `session`. The device runs the same ECDH and
    the same stretch, and both sides now hold the same key.
 
-The `"mattel"` constant and the round count came out of reversing `mpidEncryptInternal` /
-`mpid_AES_128_CTR` in Ghidra. Because the native lib was proving slow to read by hand, the fastest
-route to *certainty* was to **run it**: load the `.so` in an ARM emulator and call the exported
-functions with known inputs, then diff the output against a candidate Python implementation until
-they matched bit-for-bit. Emulation turned "I think the KDF is X" into "the KDF is provably X."
+The round count and the `"mattel"` IV came out of reversing `mpid_AES_128_CTR` and
+`mpidEncryptInternal` in Ghidra. Reading AArch64 by hand is error-prone, so the fastest route to
+*certainty* was to **run the library** rather than trust the disassembly: map `libnative-lib.so`
+into a **Unicorn** ARM64 instance, apply its relocations, stub the handful of libc calls it needs
+(`malloc`, `memcpy`, `__read_chk` → `/dev/urandom`, `__stack_chk_fail`, …), set up a TLS block so the
+stack-canary read at `TPIDR_EL0+0x28` doesn't fault, run `.init_array` (the C++ static
+constructors), and then call the exported functions directly.
+
+The worked example is `crc8_calc`: feed it `"123456789"` and it returns the same byte as a plain
+Python CRC computed over the 256-entry table lifted from the library's own memory — a self-contained
+check that the harness really is executing the native code. The AES-CTR stretch was pinned the same
+way: emulate the native routine, diff its output against a candidate Python implementation, and
+iterate until every byte matched. The whole handshake — token signature verification included — was
+then run end-to-end in the emulator before a single byte was rewritten by hand. The decisive
+confirmation came later on hardware: the clean-room key derived in Python **decrypts real `rx`
+notifications with a valid CRC-8**, which is only possible if the derivation matches the device's
+exactly.
 
 ## 5. Frame format
 
@@ -235,7 +249,8 @@ jadx -d jadx8 fisher-price-8.6.4.apk
 #    mpid_AES_128_CTR, mpidEncryptInternal, crc8_calc
 
 # 3. confirm the KDF by running it
-#    emulate the exported functions (unicorn/qemu-user) and diff vs your Python
+#    map the .so into Unicorn (ARM64), stub libc, run .init_array,
+#    call the exported functions and diff their output vs your Python
 
 # 4. talk to the device (read-only first)
 pip install bleak cryptography
