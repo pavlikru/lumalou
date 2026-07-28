@@ -53,7 +53,9 @@ The Lumalou speaks Mattel's **MPID** protocol over a custom GATT service (`4cea0
 - **Framing** — commands are wrapped `FE-frame → SSI0 → MPID` and encrypted with **AES-128-CTR**
   (CRC-8 integrity). Responses are decrypted and decoded symmetrically.
 
-Full write-up: [`docs/protocol.md`](docs/protocol.md).
+Full protocol spec: [`docs/protocol.md`](docs/protocol.md). How it was reverse-engineered, end to
+end (APK decompile, native-crypto analysis, key derivation, live capture):
+[`docs/reversing.md`](docs/reversing.md).
 
 ## Related devices (Fisher-Price Smart Connect)
 

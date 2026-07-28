@@ -2,6 +2,7 @@
 
 Reverse-engineered from the official app and validated bit-exact against the device's native
 library and the physical hardware. Machine-readable form: [`spec/protocol.json`](../spec/protocol.json).
+For *how* this was worked out (the process, tools, and dead ends), see [`reversing.md`](reversing.md).
 
 ## GATT
 
