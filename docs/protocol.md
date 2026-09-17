@@ -52,7 +52,9 @@ arrives as `SSI0 | FE-frame | [response_opcode] + data`.
 Full opcode and enum tables are in [`spec/protocol.json`](../spec/protocol.json). Highlights:
 `SET_LIGHT_COLOR (0x3C)`, `SET_LED_BRIGHTNESS (0x3A)`, `PLAY_AUDIO (0x3F)`, `SET_VOLUME (0x37)`,
 `SET_GLOBAL_ON (0x03)`, `START_NAP_TIME (0x4D)`, `SET_CURRENT_DATE (0x30)`,
-`REQUEST_GLOBAL_STATE (0x53)` (full snapshot).
+`REQUEST_GLOBAL_STATE (0x53)` (runtime summary).
 
-`GLOBAL_STATE` (response `0x02`) is a 26-nibble snapshot of the whole device state
-(mode, light, audio, timers, clock, routine). See the decoders in each package.
+`GLOBAL_STATE` (response `0x02`) is a 26-nibble runtime summary covering selected
+mode, light, audio, timer, clock, and routine fields. It is not a complete
+configuration snapshot: it omits the custom playlist, weekly times and alarms,
+and all seven daily routine payloads. See the decoders in each package.
