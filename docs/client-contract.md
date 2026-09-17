@@ -58,6 +58,53 @@ instead of guessing fields. Their envelopes still preserve raw payloads for
 further protocol work. Receiving all those raw blocks is not yet a verified
 complete backup or restore API.
 
+### Exhaustive read-only query surface
+
+Python and JavaScript named command builders cover all 28 `REQUEST_*` constants
+in `spec/protocol.json`; the seven day-routine requests use their separate day
+map. Python `request_named` supplies the exact response opcode for every name.
+`spec/read-requests.json` records independent literal command/response vectors
+and the pinned deployed bundle URL and SHA-256. Pairings are source-table
+semantic matches, not newly observed hardware-correlated exchanges.
+
+The additional query names and hexadecimal IDs are:
+
+| Name | Request | Response |
+| --- | --- | --- |
+| `routine_mode_status` | `59` | `92` |
+| `routine_music_status` | `6A` | `93` |
+| `r2r_status` | `45` | `21` |
+| `r2r_alarm_status` | `4B` | `26` |
+| `nap_current_status` | `4E` | `1C` |
+| `nap_alarm_status` | `50` | `24` |
+| `nap_alarm` | `51` | `25` |
+| `time_prescaler` | `73` | `28` |
+
+The bundle's `te`/`ph` command/response tables establish those IDs; `Oa` contains
+all friendly names except the two nap-alarm names, which this library adds from
+the explicit `REQUEST_NAP_TIME_ALARM_STATUS` / `NAP_TIME_ALARM_STATUS` and
+`REQUEST_NAP_TIME_ALARM` / `NAP_TIME_ALARM_TIME` table labels. Reading the time
+prescaler is distinct from unsafe `SET_TIME_PRESCALER` (`52`); the named query
+API cannot produce that write or pairing-complete.
+
+No new typed decoders are added for these replies. The deployed notification
+dispatcher decodes only global state, daily routines, task status, weekly times
+and weekly alarms. Existing setters and fields in GLOBAL_STATE prove their own
+encodings, not the byte length or nibble placement of the standalone responses.
+In particular, the 12-byte playlist setter does not establish the `19` reply
+layout, and the two-byte clock setter does not establish the `99` reply layout.
+The displayed clock values come from GLOBAL_STATE; the playlist editor's local
+state is not a readback decoder. All those individual replies therefore remain
+raw `ResponseEnvelope`s and `decode()` explicitly rejects them. A correctly
+framed raw envelope can contain arbitrary-length bytes: this is transport
+validation, not validation or restore approval for the contained configuration.
+
+Tests check every literal query opcode, completeness against the declared
+request constants, every Python response mapping, and exact outgoing encrypted
+query plaintext with a fake BLE transport. They also verify raw preservation,
+fresh-session enforcement and rejected unknown/unsafe names. No new device
+queries or writes were issued to establish these tests.
+
 ## No invented request correlation
 
 The MPID RX sequence is not proven to echo the outgoing request sequence. It

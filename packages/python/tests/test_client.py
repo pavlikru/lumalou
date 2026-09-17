@@ -1,6 +1,8 @@
 """Client sessions and fresh response contract, using a fake Bleak transport."""
 
 import asyncio
+import json
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -20,6 +22,10 @@ from lumalou.client import (
 )
 
 pytestmark = pytest.mark.asyncio
+
+READ_REQUESTS = json.loads(
+    (Path(__file__).resolve().parents[3] / "spec" / "read-requests.json").read_text()
+)["requests"]
 
 
 @pytest.fixture
@@ -316,6 +322,35 @@ async def test_named_requests_preserve_raw_payloads(rig, name, opcode, args):
             envelope.decode()  # No invented layout; raw evidence remains available.
     else:
         assert envelope.decode() is not None
+    await rig.client.disconnect()
+
+
+@pytest.mark.parametrize("vector", READ_REQUESTS, ids=lambda v: v["name"])
+async def test_every_named_request_sends_exact_query_and_matches_response(rig, vector):
+    transport = await connect(rig)
+    opcode = int(vector["response"], 16)
+    # Known structured replies must pass strict decoding; all others remain raw.
+    sizes = {0x02: 13, 0x22: 14, 0x23: 14, 0x27: 4, 0x94: 7}
+    args = bytes(sizes[opcode]) if opcode in sizes else b"\x12\x34\xff"
+
+    async def reply(frame):
+        key, nonce, salt = transport.keys
+        # Reverse RX's salt/nonce order when inspecting the outgoing TX frame.
+        decoded = P.decrypt_rx_frame(frame, key, salt, nonce)
+        assert decoded["crc_ok"]
+        assert decoded["plaintext"] == P.encode_command(
+            bytes.fromhex(vector["request"])
+        )
+        transport.notify(opcode, args)
+
+    transport.on_write = reply
+    envelope = await rig.client.request_named(vector["name"])
+    assert envelope.opcode == opcode and envelope.args == args
+    assert envelope.generation == rig.client.generation
+    writes = len(transport.writes)
+    with pytest.raises(FreshSessionRequiredError):
+        await rig.client.request_named(vector["name"])
+    assert len(transport.writes) == writes
     await rig.client.disconnect()
 
 

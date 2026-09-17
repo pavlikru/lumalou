@@ -97,10 +97,18 @@ _REQUEST_RESPONSES = {
     "current_stage": 0x20,
     "clock_settings": 0x99,
     "transmission_mode": 0x1D,
+    "routine_mode_status": 0x92,
+    "routine_music_status": 0x93,
+    "r2r_status": 0x21,
     "r2r_times": 0x22,
     "sleepy_times": 0x23,
+    "r2r_alarm_status": 0x26,
     "r2r_alarms": 0x27,
     "routine_task_status": 0x94,
+    "nap_current_status": 0x1C,
+    "nap_alarm_status": 0x24,
+    "nap_alarm": 0x25,
+    "time_prescaler": 0x28,
 }
 
 

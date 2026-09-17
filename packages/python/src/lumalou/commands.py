@@ -200,10 +200,18 @@ _REQUESTS = {
     "current_stage": "REQUEST_CURRENT_STAGE",
     "clock_settings": "REQUEST_CLOCK_SETTINGS",
     "transmission_mode": "REQUEST_TRANSMISSION_MODE",
+    "routine_mode_status": "REQUEST_ROUTINE_MODE_STATUS",
+    "routine_music_status": "REQUEST_ROUTINE_MUSIC_STATUS",
+    "r2r_status": "REQUEST_R2R_STATUS",
     "r2r_times": "REQUEST_R2R_TIMES",
     "sleepy_times": "REQUEST_SLEEPY_TIMES",
+    "r2r_alarm_status": "REQUEST_R2R_ALARM_STATUS",
     "r2r_alarms": "REQUEST_R2R_ALARMS",
     "routine_task_status": "REQUEST_ROUTINE_TASK_STATUS",
+    "nap_current_status": "REQUEST_CURRENT_NAP_TIME_STATUS",
+    "nap_alarm_status": "REQUEST_NAP_TIME_ALARM_STATUS",
+    "nap_alarm": "REQUEST_NAP_TIME_ALARM",
+    "time_prescaler": "REQUEST_TIME_PRESCALER",
 }
 
 
