@@ -1,5 +1,6 @@
 // Command builders. Each returns the app-level payload: [opcode] + args.
 import { COMMANDS } from "./generated.js";
+import { integer, playlistFromSongs, encodeMusicPlaylist, encodeClockSettings, encodeRoutineMusicSettings, type MusicPlaylist, type RoutineMusicSettings } from "./profile.js";
 
 const NO_MODIFY = 0x0f;
 const u8 = (...a: number[]) => new Uint8Array(a);
@@ -16,24 +17,24 @@ export function reduceLowNibbles(values: number[]): Uint8Array {
 }
 
 // light
-export const setLightColor = (c: number) => u8(COMMANDS.SET_LIGHT_COLOR, c);
-export const setBrightness = (l: number) => u8(COMMANDS.SET_LED_BRIGHTNESS, l & 0xff);
-export const setLightDuration = (d: number) => u8(COMMANDS.SET_SOOTHER_MODE_LIGHT_DURATION, d);
+export const setLightColor = (c: number) => u8(COMMANDS.SET_LIGHT_COLOR, integer(c, 0, 9, "color"));
+export const setBrightness = (l: number) => u8(COMMANDS.SET_LED_BRIGHTNESS, integer(l, 0, 9, "brightness"));
+export const setLightDuration = (d: number) => u8(COMMANDS.SET_SOOTHER_MODE_LIGHT_DURATION, integer(d, 0, 5, "light duration"));
 export const turnOffBacklight = () => u8(COMMANDS.TURN_OFF_CLOUD_BACKLIGHT);
 
 // audio
 export const playAudio = (a: number) => u8(COMMANDS.PLAY_AUDIO, a);
 export const turnOffAudio = () => u8(COMMANDS.TURN_OFF_AUDIO);
-export const setPlaylistDuration = (d: number) => u8(COMMANDS.SET_PLAYLIST_DURATION, d);
-export function setMusicPlaylist(songIds: number[]): Uint8Array {
-  const ids = songIds.filter((s) => s !== 0).slice(0, 12);
-  while (ids.length < 12) ids.push(0);
-  return new Uint8Array([COMMANDS.SET_MUSIC_PLAYLIST, ...ids]);
+export const setPlaylistDuration = (d: number) => u8(COMMANDS.SET_PLAYLIST_DURATION, integer(d, 0, 6, "playlist duration"));
+export function setMusicPlaylist(songIds: number[] | MusicPlaylist): Uint8Array {
+  const value = Array.isArray(songIds) ? playlistFromSongs(songIds) : songIds;
+  return new Uint8Array([COMMANDS.SET_MUSIC_PLAYLIST, ...encodeMusicPlaylist(value)]);
 }
 
 // volume
-export const setVolume = (l: number) => u8(COMMANDS.SET_VOLUME, l & 0xff);
-export const setRoutineVolume = (l: number) => u8(COMMANDS.SET_ROUTINE_MODE_VOLUME, l & 0xff);
+export const setVolume = (l: number) => u8(COMMANDS.SET_VOLUME, integer(l, 0, 9, "volume"));
+// Byte range only: the routine-specific hardware range is not established.
+export const setRoutineVolume = (l: number) => u8(COMMANDS.SET_ROUTINE_MODE_VOLUME, integer(l, 0, 255, "routine volume byte"));
 
 // system
 export const setGlobalOn = (on: boolean) => u8(COMMANDS.SET_GLOBAL_ON, on ? 1 : 0);
@@ -48,14 +49,21 @@ export function setGlobalState(o: {
 export const setCurrentDate = (h: number, m: number, s: number, wd: number) =>
   u8(COMMANDS.SET_CURRENT_DATE, bcd(h), bcd(m), bcd(s), bcd(wd));
 export function setClockSettings(displayOn: boolean, brightness: number, fmt: number): Uint8Array {
-  return new Uint8Array([COMMANDS.SET_CLOCK_SETTINGS, ...reduceLowNibbles([0, displayOn ? 1 : 0, brightness & 0x0f, fmt])]);
+  return new Uint8Array([COMMANDS.SET_CLOCK_SETTINGS, ...encodeClockSettings({ displayOn, brightness, format: fmt })]);
 }
 
 // timers / routine
-export const setR2RStatus = (on: boolean) => u8(COMMANDS.SET_R2R_STATUS, on ? 1 : 0);
+export function setR2RStatus(on: boolean): Uint8Array {
+  if (typeof on !== "boolean") throw new Error("r2r status must be boolean");
+  return u8(COMMANDS.SET_R2R_STATUS, Number(on));
+}
 export const startNap = (d: number) => u8(COMMANDS.START_NAP_TIME, d);
-export const setNapAlarm = (a: number) => u8(COMMANDS.SET_NAP_TIME_ALARM, a);
-export const setRoutineStatus = (on: boolean) => u8(COMMANDS.SET_ROUTINE_MODE_STATUS, on ? 1 : 0);
+export const setNapAlarm = (a: number) => u8(COMMANDS.SET_NAP_TIME_ALARM, integer(a, 0, 10, "nap alarm"));
+export const setRoutineMusicSettings = (settings: RoutineMusicSettings) => u8(COMMANDS.SET_ROUTINE_MUSIC_STATUS, ...encodeRoutineMusicSettings(settings));
+export function setRoutineStatus(on: boolean): Uint8Array {
+  if (typeof on !== "boolean") throw new Error("routine status must be boolean");
+  return u8(COMMANDS.SET_ROUTINE_MODE_STATUS, Number(on));
+}
 export const startRoutineMode = () => u8(COMMANDS.START_ROUTINE_MODE);
 export const routineControl = (c: number) => u8(COMMANDS.ROUTINE_CONTROL_COMMAND, c);
 

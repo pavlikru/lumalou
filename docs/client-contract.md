@@ -177,6 +177,10 @@ this is a synthetic fixture correction, not a changed hardware capture.
 
 ## Breaking changes and tests
 
+See [profile contract](profile-contract.md) for strict configuration SET models
+and the remaining unsupported standalone response layouts. These additions do
+not change this client's conservative freshness rules or establish full readback.
+
 - Cache fallback on timeout removed; missing data raises.
 - A previously requested or observed response opcode requires a new session.
 - Bare FE and SSI routes other than confirmed `01 50` are no longer accepted.

@@ -227,3 +227,13 @@ def decode_routine_task_status(data: bytes) -> RoutineTaskStatus:
     return RoutineTaskStatus(
         data[0], tuple(value for byte in data[1:] for value in (byte >> 4, byte & 0x0F))
     )
+
+
+def encode_routine_task_status(status: RoutineTaskStatus) -> bytes:
+    """Lossless runtime-status serialization, NOT a SET command (0x68 is REQUEST)."""
+    if not isinstance(status, RoutineTaskStatus):
+        raise ValueError("status must be RoutineTaskStatus")
+    return bytes((status.current_step,)) + bytes(
+        status.task_states[index] << 4 | status.task_states[index + 1]
+        for index in range(0, 12, 2)
+    )

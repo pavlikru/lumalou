@@ -6,11 +6,20 @@ from ._generated import (
     COMMANDS,
     DAY_ROUTINE,
 )
+from .profile import (
+    ClockSettings,
+    MusicPlaylist,
+    RoutineMusicSettings,
+    encode_clock_settings,
+    encode_music_playlist,
+    encode_routine_music_settings,
+)
 from .schedules import (
     DailyRoutine,
     Day,
     WeeklyAlarms,
     WeeklyTimes,
+    _integer,
     encode_daily_routine,
     encode_weekly_alarms,
     encode_weekly_times,
@@ -34,15 +43,18 @@ def reduce_low_nibbles(values) -> bytes:
 
 # ---- light ----
 def set_light_color(color) -> bytes:
-    return _u8(COMMANDS["SET_LIGHT_COLOR"], int(color))
+    return _u8(COMMANDS["SET_LIGHT_COLOR"], _integer(color, 0, 9, "color"))
 
 
 def set_led_brightness(level: int) -> bytes:
-    return _u8(COMMANDS["SET_LED_BRIGHTNESS"], level & 0xFF)
+    return _u8(COMMANDS["SET_LED_BRIGHTNESS"], _integer(level, 0, 9, "brightness"))
 
 
 def set_light_duration(duration) -> bytes:
-    return _u8(COMMANDS["SET_SOOTHER_MODE_LIGHT_DURATION"], int(duration))
+    return _u8(
+        COMMANDS["SET_SOOTHER_MODE_LIGHT_DURATION"],
+        _integer(duration, 0, 5, "light duration"),
+    )
 
 
 def turn_off_backlight() -> bytes:
@@ -59,22 +71,31 @@ def turn_off_audio() -> bytes:
 
 
 def set_playlist_duration(duration) -> bytes:
-    return _u8(COMMANDS["SET_PLAYLIST_DURATION"], int(duration))
+    return _u8(
+        COMMANDS["SET_PLAYLIST_DURATION"], _integer(duration, 0, 6, "playlist duration")
+    )
 
 
 def set_music_playlist(song_ids) -> bytes:
-    ids = [int(s) for s in song_ids if int(s) != 0][:12]
-    ids += [0] * (12 - len(ids))
-    return bytes([COMMANDS["SET_MUSIC_PLAYLIST"], *ids])
+    playlist = (
+        song_ids
+        if isinstance(song_ids, MusicPlaylist)
+        else MusicPlaylist.from_songs(song_ids)
+    )
+    return _u8(COMMANDS["SET_MUSIC_PLAYLIST"]) + encode_music_playlist(playlist)
 
 
 # ---- volume ----
 def set_volume(level: int) -> bytes:
-    return _u8(COMMANDS["SET_VOLUME"], level & 0xFF)
+    return _u8(COMMANDS["SET_VOLUME"], _integer(level, 0, 9, "volume"))
 
 
 def set_routine_volume(level: int) -> bytes:
-    return _u8(COMMANDS["SET_ROUTINE_MODE_VOLUME"], level & 0xFF)
+    # Only the byte representation is established; no hardware range is known.
+    return _u8(
+        COMMANDS["SET_ROUTINE_MODE_VOLUME"],
+        _integer(level, 0, 255, "routine volume byte"),
+    )
 
 
 # ---- system ----
@@ -120,18 +141,15 @@ def set_current_date(hour, minute, second, weekday) -> bytes:
 
 
 def set_clock_settings(display_on, brightness, fmt) -> bytes:
-    return bytes(
-        [
-            COMMANDS["SET_CLOCK_SETTINGS"],
-            *reduce_low_nibbles(
-                [0, int(bool(display_on)), brightness & 0x0F, int(fmt)]
-            ),
-        ]
+    return _u8(COMMANDS["SET_CLOCK_SETTINGS"]) + encode_clock_settings(
+        ClockSettings(display_on, brightness, fmt)
     )
 
 
 # ---- timers ----
 def set_r2r_status(on: bool) -> bytes:
+    if type(on) is not bool:
+        raise ValueError("r2r status must be a boolean")
     return _u8(COMMANDS["SET_R2R_STATUS"], 1 if on else 0)
 
 
@@ -140,7 +158,7 @@ def start_nap(duration) -> bytes:
 
 
 def set_nap_alarm(alarm) -> bytes:
-    return _u8(COMMANDS["SET_NAP_TIME_ALARM"], int(alarm))
+    return _u8(COMMANDS["SET_NAP_TIME_ALARM"], _integer(alarm, 0, 10, "nap alarm"))
 
 
 def set_r2r_times(week: WeeklyTimes) -> bytes:
@@ -156,7 +174,16 @@ def set_r2r_alarms(alarms: WeeklyAlarms) -> bytes:
 
 
 # ---- routine ----
+def set_routine_music_settings(settings: RoutineMusicSettings) -> bytes:
+    """Set the music byte and both reward nibbles; not a routine start action."""
+    return _u8(COMMANDS["SET_ROUTINE_MUSIC_STATUS"]) + encode_routine_music_settings(
+        settings
+    )
+
+
 def set_routine_status(on: bool) -> bytes:
+    if type(on) is not bool:
+        raise ValueError("routine status must be a boolean")
     return _u8(COMMANDS["SET_ROUTINE_MODE_STATUS"], 1 if on else 0)
 
 

@@ -1,5 +1,9 @@
 # Python schedule codecs (unreleased)
 
+JavaScript now exposes the equivalent strict schedule codecs and runs the same
+literal vectors. See [profile contract](profile-contract.md) for additional
+SET-only models, the exact response-schema gaps, and hardware-proof limits.
+
 These codecs add typed, immutable representations and strict validation, not a
 complete snapshot transaction or restore implementation. They do not connect to
 hardware. Hardware compatibility and side effects remain unverified.

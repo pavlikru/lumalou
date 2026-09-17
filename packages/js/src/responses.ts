@@ -1,5 +1,6 @@
 // Decode device responses. Values are raw integers (canonical, matches the spec).
 import { RESPONSES } from "./generated.js";
+import { payload } from "./profile.js";
 
 const nibbles = (data: Uint8Array): number[] => {
   const out: number[] = [];
@@ -19,8 +20,8 @@ export interface GlobalState {
 
 /** Decode the GLOBAL_STATE snapshot (response 0x02) into raw integer fields. */
 export function parseGlobalState(args: Uint8Array): GlobalState {
+  payload(args, 13);
   const n = nibbles(args);
-  while (n.length < 26) n.push(0);
   return {
     operationMode: n[0], activityState: n[1], musicStatus: n[2],
     currentSong: (n[3] << 4) | n[4], currentVolume: n[5], playlistDuration: n[6],

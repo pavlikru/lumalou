@@ -38,6 +38,7 @@ from .client import (
     ResponseEnvelope,
     UnsupportedResponseError,
 )
+from .profile import ClockSettings, MusicPlaylist, OpaqueBlock, RoutineMusicSettings
 from .protocol import build_tx_frame, crc8, decrypt_rx_frame, encode_command
 
 __version__ = "0.1.0"
@@ -46,6 +47,7 @@ __all__ = [
     "Alarm",
     "Audio",
     "ClockFormat",
+    "ClockSettings",
     "Color",
     "DisconnectedError",
     "FreshSessionRequiredError",
@@ -53,12 +55,15 @@ __all__ = [
     "LumalouClient",
     "LumalouError",
     "MalformedResponseError",
+    "MusicPlaylist",
     "NapDuration",
     "OperationMode",
+    "OpaqueBlock",
     "PlaylistDuration",
     "RequestTimeoutError",
     "ResponseEnvelope",
     "RoutineControl",
+    "RoutineMusicSettings",
     "Song",
     "Stage",
     "UnsupportedResponseError",
