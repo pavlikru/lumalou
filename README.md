@@ -57,6 +57,12 @@ Full protocol spec: [`docs/protocol.md`](docs/protocol.md). How it was reverse-e
 end (APK decompile, native-crypto analysis, key derivation, live capture):
 [`docs/reversing.md`](docs/reversing.md).
 
+The unreleased Python work also documents its conservative
+[session/fresh-response contract](docs/client-contract.md) and strict
+[schedule/routine codecs](docs/schedule-codecs.md). These APIs preserve raw
+block identity and reject ambiguous stale replies; they are not a claim of
+hardware-certified backup or restore.
+
 ## Related devices (Fisher-Price Smart Connect)
 
 The Smart Connect app controlled a whole family of Fisher-Price devices. It was removed from

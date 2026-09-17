@@ -75,7 +75,7 @@ def build_parser():
     s = sub.add_parser("scan", help="find Lumalou devices")
     s.add_argument("--timeout", type=float, default=8.0)
 
-    sub.add_parser("state", help="read the full state")
+    sub.add_parser("state", help="read a fresh GLOBAL_STATE snapshot")
 
     li = sub.add_parser("light", help="control the light")
     li.add_argument("-c", "--color", help="warm|red|yellow|orange|green|blue|purple|night_light|cool|rainbow or 0-9")

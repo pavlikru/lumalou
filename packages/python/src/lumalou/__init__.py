@@ -14,17 +14,56 @@ Reverse-engineered MPID protocol: ECDH P-256 handshake + AES-128-CTR, pure Pytho
 
     asyncio.run(main())
 """
-from .client import LumalouClient
-from ._generated import (Color, Audio, Song, LightDuration, PlaylistDuration,
-                         NapDuration, Alarm, RoutineControl, ClockFormat,
-                         OperationMode, Stage)
-from .protocol import build_tx_frame, decrypt_rx_frame, encode_command, crc8
+
+from ._generated import (
+    Alarm,
+    Audio,
+    ClockFormat,
+    Color,
+    LightDuration,
+    NapDuration,
+    OperationMode,
+    PlaylistDuration,
+    RoutineControl,
+    Song,
+    Stage,
+)
+from .client import (
+    DisconnectedError,
+    FreshSessionRequiredError,
+    LumalouClient,
+    LumalouError,
+    MalformedResponseError,
+    RequestTimeoutError,
+    ResponseEnvelope,
+    UnsupportedResponseError,
+)
+from .protocol import build_tx_frame, crc8, decrypt_rx_frame, encode_command
 
 __version__ = "0.1.0"
 
 __all__ = [
+    "Alarm",
+    "Audio",
+    "ClockFormat",
+    "Color",
+    "DisconnectedError",
+    "FreshSessionRequiredError",
+    "LightDuration",
     "LumalouClient",
-    "Color", "Audio", "Song", "LightDuration", "PlaylistDuration", "NapDuration",
-    "Alarm", "RoutineControl", "ClockFormat", "OperationMode", "Stage",
-    "build_tx_frame", "decrypt_rx_frame", "encode_command", "crc8",
+    "LumalouError",
+    "MalformedResponseError",
+    "NapDuration",
+    "OperationMode",
+    "PlaylistDuration",
+    "RequestTimeoutError",
+    "ResponseEnvelope",
+    "RoutineControl",
+    "Song",
+    "Stage",
+    "UnsupportedResponseError",
+    "build_tx_frame",
+    "crc8",
+    "decrypt_rx_frame",
+    "encode_command",
 ]
