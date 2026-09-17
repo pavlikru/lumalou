@@ -330,7 +330,7 @@ async def test_every_named_request_sends_exact_query_and_matches_response(rig, v
     transport = await connect(rig)
     opcode = int(vector["response"], 16)
     # Known structured replies must pass strict decoding; all others remain raw.
-    sizes = {0x02: 13, 0x22: 14, 0x23: 14, 0x27: 4, 0x94: 7}
+    sizes = {0x02: 13, 0x13: 4, 0x22: 14, 0x23: 14, 0x27: 4, 0x94: 7}
     args = bytes(sizes[opcode]) if opcode in sizes else b"\x12\x34\xff"
 
     async def reply(frame):
@@ -350,6 +350,48 @@ async def test_every_named_request_sends_exact_query_and_matches_response(rig, v
     writes = len(transport.writes)
     with pytest.raises(FreshSessionRequiredError):
         await rig.client.request_named(vector["name"])
+    assert len(transport.writes) == writes
+    await rig.client.disconnect()
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        b"",
+        bytes(3),
+        bytes(5),
+        b"\x24\x00\x00\x00",
+        b"\x00\x60\x00\x00",
+        b"\x00\x00\x60\x00",
+        b"\x00\x00\x00\x07",
+        b"\x1a\x00\x00\x00",
+        b"\xff" * 4,
+    ],
+)
+async def test_malformed_current_date_retires_session(rig, args):
+    transport = await connect(rig)
+    task = await waiting_request(
+        rig, transport, opcode=0x13, payload=C.request("current_date")
+    )
+    transport.notify(0x13, args)
+    with pytest.raises(MalformedResponseError):
+        await task
+    assert not rig.client.connected
+    assert not rig.envelopes
+    assert rig.client.state is None
+
+
+async def test_current_date_unsolicited_transition_is_transient_observation(rig):
+    transport = await connect(rig)
+    transport.notify(0x13, bytes.fromhex("23590003"))
+    transport.notify(0x13, bytes.fromhex("00000004"))
+    assert [response.decode().weekday for response in rig.envelopes] == [3, 4]
+    assert [response.decode().hour for response in rig.envelopes] == [23, 0]
+    assert rig.client.state is None  # Clock readings do not replace GLOBAL_STATE.
+    assert not rig.states
+    writes = len(transport.writes)
+    with pytest.raises(FreshSessionRequiredError):
+        await rig.client.request_named("current_date")
     assert len(transport.writes) == writes
     await rig.client.disconnect()
 

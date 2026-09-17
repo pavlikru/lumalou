@@ -227,7 +227,6 @@ def test_mode_flags_require_explicit_booleans(builder, opcode):
         (0x99, bytes(2)),
         (0x93, bytes(2)),
         (0x12, b"1.2"),
-        (0x13, bytes(4)),
     ],
 )
 def test_set_lengths_do_not_invent_response_schemas(opcode, args):

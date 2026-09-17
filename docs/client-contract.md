@@ -2,7 +2,9 @@
 
 This change is deliberately incompatible with unsafe 0.1.0 behavior. It adds
 session-isolated reads and transport validation, not hardware-certified restore.
-No device testing was performed for this change.
+Transport behavior is tested with fake BLE. The CURRENT_DATE decoder also uses
+the limited read-only target evidence described below; this is not hardware
+acceptance of the client or profile restoration.
 
 ## Home Assistant connection boundary
 
@@ -51,12 +53,41 @@ explicit seven-day response map, including Friday `90` and Saturday `91`.
 `state` is a detached last observation of the current live session only.
 Unsolicited valid GLOBAL_STATE notifications update it and call `on_state`.
 
-`ResponseEnvelope.decode()` returns the strict GLOBAL_STATE or typed schedule /
-routine / task-status model when a layout is established. Playlist, clock and
+`ResponseEnvelope.decode()` returns the strict GLOBAL_STATE, CURRENT_DATE, or
+typed schedule / routine / task-status model when a layout is established. Playlist, clock settings and
 other presently unimplemented payload decoders raise `UnsupportedResponseError`
 instead of guessing fields. Their envelopes still preserve raw payloads for
 further protocol work. Receiving all those raw blocks is not yet a verified
 complete backup or restore API.
+
+### CURRENT_DATE is a transient clock reading
+
+Response `13` now decodes to immutable `CurrentDate(hour, minute, second,
+weekday)` through `lumalou.responses.parse_current_date` or envelope `decode()`.
+It requires exactly four BCD bytes, with hour 0–23, minute/second 0–59 and weekday
+0–6 (Sunday first). Invalid BCD, out-of-range values, truncated/extra bytes and
+`FF` sentinels are rejected; a malformed live reply retires the session just as
+other known typed responses do. Model construction also rejects coercion and
+booleans in integer fields.
+
+Read-only target observations supplied on 2026-09-17 established the reply's
+four-byte layout and a midnight transition: `23 59 00 03` (23:59:00, weekday 3)
+to `00 00 00 04` (00:00:00, weekday 4). This agrees with the existing Python
+`set_current_date` encoding and the pinned bundle's `id` setter, whose explicit
+ranges are 23/59/59/6. The bundle setter alone was insufficient proof; these
+target observations supply the missing response-layout evidence. The target
+product code and firmware version remain **unconfirmed**. No calendar date or
+timezone was transmitted or inferred, and this evidence does not certify other
+firmware or SET behavior.
+
+Despite the protocol name, `CurrentDate` is not a calendar date or a persistent
+profile field. Do not save and replay it during restore. It is observable
+through response envelopes, does not replace cached GLOBAL_STATE, and retains
+the normal same-opcode freshness guard. Tests include the two observed payloads,
+synthetic boundaries, all 604800 clock/weekday combinations against the existing
+SET encoder, every possible byte value per field, and malformed BLE responses.
+Implementation and automated tests made no new hardware/browser connection or
+SET call to a device.
 
 ### Exhaustive read-only query surface
 

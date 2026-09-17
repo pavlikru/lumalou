@@ -35,7 +35,7 @@ def test_exact_query_and_response_ids(vector):
 @pytest.mark.parametrize("vector", VECTORS, ids=lambda v: v["name"])
 def test_only_proven_response_layouts_have_decoders(vector):
     opcode = int(vector["response"], 16)
-    if opcode in {0x02, 0x22, 0x23, 0x27, 0x94}:
+    if opcode in {0x02, 0x13, 0x22, 0x23, 0x27, 0x94}:
         return
     # Deliberately arbitrary bytes: preserving raw is not validating semantics.
     raw = b"\x00\xff\x01\x89"

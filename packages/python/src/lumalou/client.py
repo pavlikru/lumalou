@@ -70,6 +70,8 @@ class ResponseEnvelope:
         try:
             if self.opcode == 0x02:
                 return R.parse_global_state(self.args)
+            if self.opcode == 0x13:
+                return R.parse_current_date(self.args)
             return R.parse_schedule_response(self.opcode, self.args)
         except ValueError as err:
             if self.opcode in _TYPED_RESPONSES:
@@ -79,7 +81,7 @@ class ResponseEnvelope:
             ) from err
 
 
-_TYPED_RESPONSES = {0x02, 0x22, 0x23, 0x27, 0x94, *DAY_ROUTINE_RESPONSES.values()}
+_TYPED_RESPONSES = {0x02, 0x13, 0x22, 0x23, 0x27, 0x94, *DAY_ROUTINE_RESPONSES.values()}
 _REQUEST_RESPONSES = {
     "global_state": 0x02,
     "current_date": 0x13,

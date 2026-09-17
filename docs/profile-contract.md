@@ -1,7 +1,10 @@
 # Profile contract: source-backed pieces and explicit gaps
 
 This is an **unreleased, hardware-unverified contract**, not a complete profile,
-backup, import or safe restoration implementation. No device was contacted.
+backup, import or safe restoration implementation. Profile SET contracts remain
+hardware-unverified. The separate CURRENT_DATE read decoder uses the limited
+read-only target evidence documented in `client-contract.md` (2026-09-17);
+target product code and firmware are still unconfirmed.
 The fresh Python response envelope still refuses to decode layouts without
 evidence; a well-framed response is not necessarily an understood profile field.
 
@@ -77,7 +80,8 @@ day requests remain in `spec/schedule-vectors.json`.
 | Seven `request_day_routine` days | Exactly 14 bytes; preserve original slot positions, zeros, step numbers and task order. Friday/Saturday responses are 90/91, not contiguous with Sunday–Thursday 2B–2F. |
 | `routine_task_status` | Exactly 7 bytes: current-step byte and twelve raw state nibbles. State meanings/sentinels unproven; runtime-only. |
 | `music_playlist`, `clock_settings`, `routine_music_status` | No standalone response length or field layout established. SET lengths cannot be substituted. Clock/reward fields are available only through GLOBAL_STATE's mapping. |
-| `current_date`, `toyic_fw_version` | No response lengths or field encodings established. Current-date SET's four BCD bytes do not establish the reply format. No firmware string/endianness/zero-termination assumptions. |
+| `current_date` | Exactly 4 BCD bytes: hour 0–23, minute/second 0–59, Sunday-first weekday 0–6. Typed immutable `CurrentDate`, established by read-only target observations consistent with the existing SET encoding. Transient clock only: no calendar date, timezone or persistent profile value. |
+| `toyic_fw_version` | No response length or field encoding established. No firmware string/endianness/zero-termination assumptions. |
 | `led_brightness`, `light_color`, `light_duration`, `volume`, `routine_volume`, `song_playing`, `playlist_duration` | Named response identities only; no dedicated response payload schema in the pinned bundle. Related GLOBAL_STATE fields do not establish standalone reply lengths. |
 | `operation_mode`, `activity_state`, `current_stage`, `transmission_mode`, `time_prescaler` | Named response identities only. Prescaler SET remains prohibited. |
 | `routine_mode_status`, `r2r_status`, `r2r_alarm_status`, `nap_current_status`, `nap_alarm_status`, `nap_alarm` | Named response identities only; scalar/boolean length and value interpretation must not be invented. |

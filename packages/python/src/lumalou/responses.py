@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from ._generated import RESPONSES, Color, OperationMode, Stage
 from .schedules import (
     DAY_ROUTINE_RESPONSES,
@@ -14,6 +16,40 @@ from .schedules import (
     decode_weekly_alarms,
     decode_weekly_times,
 )
+
+
+@dataclass(frozen=True)
+class CurrentDate:
+    """Transient device clock reading, not a calendar date or zoned timestamp.
+
+    Weekday uses the source-backed Sunday=0 through Saturday=6 convention.
+    No calendar date, timezone or persistence can be inferred from this reply.
+    """
+
+    hour: int
+    minute: int
+    second: int
+    weekday: int
+
+    def __post_init__(self) -> None:
+        for name, maximum in (
+            ("hour", 23),
+            ("minute", 59),
+            ("second", 59),
+            ("weekday", 6),
+        ):
+            value = getattr(self, name)
+            if type(value) is not int or not 0 <= value <= maximum:
+                raise ValueError(f"{name} must be an integer from 0 to {maximum}")
+
+
+def parse_current_date(args: bytes) -> CurrentDate:
+    """Decode exactly four BCD bytes: hour, minute, second, weekday (0x13)."""
+    if not isinstance(args, bytes) or len(args) != 4:
+        raise ValueError("CURRENT_DATE must contain exactly 4 bytes")
+    if any(byte >> 4 > 9 or byte & 0x0F > 9 for byte in args):
+        raise ValueError("CURRENT_DATE contains invalid BCD")
+    return CurrentDate(*(10 * (byte >> 4) + (byte & 0x0F) for byte in args))
 
 
 def parse_r2r_times(args: bytes) -> WeeklyTimes:

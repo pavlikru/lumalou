@@ -40,6 +40,7 @@ from .client import (
 )
 from .profile import ClockSettings, MusicPlaylist, OpaqueBlock, RoutineMusicSettings
 from .protocol import build_tx_frame, crc8, decrypt_rx_frame, encode_command
+from .responses import CurrentDate
 
 __version__ = "0.1.0"
 
@@ -49,6 +50,7 @@ __all__ = [
     "ClockFormat",
     "ClockSettings",
     "Color",
+    "CurrentDate",
     "DisconnectedError",
     "FreshSessionRequiredError",
     "LightDuration",
@@ -57,8 +59,8 @@ __all__ = [
     "MalformedResponseError",
     "MusicPlaylist",
     "NapDuration",
-    "OperationMode",
     "OpaqueBlock",
+    "OperationMode",
     "PlaylistDuration",
     "RequestTimeoutError",
     "ResponseEnvelope",
