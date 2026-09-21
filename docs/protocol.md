@@ -4,6 +4,20 @@ Reverse-engineered from the official app and validated bit-exact against the dev
 library and the physical hardware. Machine-readable form: [`spec/protocol.json`](../spec/protocol.json).
 For *how* this was worked out (the process, tools, and dead ends), see [`reversing.md`](reversing.md).
 
+## Advertising
+
+The connectable BLE advertisement uses Bluetooth company identifier `0x03B6`
+(950). Its manufacturer payload is `MB | format version | connection flags |
+firmware ASCII`; the company identifier is not included in these bytes. The
+format byte is currently treated as opaque. An independent GLD09 controller
+maps bit 7 to connected, bit 6 to pairing and zero flags to idle; its published
+live observation confirms the idle value and firmware `0.3.7`, not every flag
+combination:
+[`kvdb/gld09-control`](https://github.com/kvdb/gld09-control/blob/7f157405e7b047e49eeb41e80bda01dee49ce15a/lumalou_mpid.py#L377-L404).
+The Python package preserves the format byte and rejects malformed firmware
+fields instead of silently replacing invalid bytes. Its 32-byte firmware limit
+and character allowlist are defensive parser policy, not measured device limits.
+
 ## GATT
 
 Custom service `4cea0001-c678-4202-b5d3-712dbb5e5b14`:

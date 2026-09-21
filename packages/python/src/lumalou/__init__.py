@@ -28,6 +28,13 @@ from ._generated import (
     Song,
     Stage,
 )
+from .advertisement import (
+    MANUFACTURER_ID,
+    MANUFACTURER_PREFIX,
+    LumalouAdvertisement,
+    is_lumalou_advertisement,
+    parse_advertisement,
+)
 from .client import (
     DisconnectedError,
     FreshSessionRequiredError,
@@ -45,6 +52,8 @@ from .responses import CurrentDate
 __version__ = "0.1.0"
 
 __all__ = [
+    "MANUFACTURER_ID",
+    "MANUFACTURER_PREFIX",
     "Alarm",
     "Audio",
     "ClockFormat",
@@ -54,6 +63,7 @@ __all__ = [
     "DisconnectedError",
     "FreshSessionRequiredError",
     "LightDuration",
+    "LumalouAdvertisement",
     "LumalouClient",
     "LumalouError",
     "MalformedResponseError",
@@ -73,4 +83,6 @@ __all__ = [
     "crc8",
     "decrypt_rx_frame",
     "encode_command",
+    "is_lumalou_advertisement",
+    "parse_advertisement",
 ]
