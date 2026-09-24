@@ -188,12 +188,14 @@ The frame format is source-backed by `docs/protocol.md`, `docs/reversing.md`, th
 original builders and shared independent golden vectors: eight-byte MPID header,
 declared encrypted-body length including CRC byte, header CRC-8 and decrypted
 body CRC-8. An FE frame has an exact nonzero declared application length and
-the documented XOR checksum. The only accepted SSI receive route is `01 50`,
-present in both the independent `rxDecrypt` / `responseFrame` golden vectors and
-their generator. Bare FE data, the transmit route `01 10`, and all other SSI
-routes are rejected, not guessed from channel bytes. This is the supported
-receive-route allowlist, not a claim that no other firmware route can ever exist.
-New routes require source-backed vectors before support. Parsing never searches
+the documented XOR checksum. Application responses use the `01 50` route,
+present in both the independent `rxDecrypt` / `responseFrame` golden vectors
+and their generator. A separate target-observed exact transport acknowledgement
+`00 7f 01 03` is ignored and cannot satisfy a request. Bare FE data, the transmit
+route `01 10`, and all other SSI routes are rejected, not guessed from channel
+bytes. This is the supported application receive allowlist, not a claim that no
+other firmware route can ever exist. New routes require source-backed vectors
+before support. Parsing never searches
 arbitrary bytes for a later FE marker or accepts trailing/truncated bytes. Valid
 non-FE events on the confirmed `01 50` route
 (such as the existing `01 50 02 ...` golden vector) are ignored as non-application

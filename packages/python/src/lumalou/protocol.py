@@ -57,12 +57,15 @@ def encode_command(app_data: bytes) -> bytes:
 def parse_response_frame(plaintext: bytes) -> dict:
     """Validate one FE response; no scanning, zero padding or reassembly.
 
-    A valid MPID payload can carry non-FE transport notifications (for example
-    the existing 01 50 02 ... vector). Those are not application responses.
+    Valid MPID payloads can carry non-FE transport notifications. The exact
+    00 7f 01 03 session acknowledgement and the established 01 50 02 ... event
+    are not application responses and must not invalidate the session.
     """
     if not isinstance(plaintext, bytes) or len(plaintext) < 2:
         return {"ssi": None, "ok": False, "error": "length"}
     ssi = plaintext[:2].hex()
+    if plaintext == bytes.fromhex("00 7f 01 03"):
+        return {"ssi": ssi, "ok": False, "error": "unsupported_transport"}
     if plaintext[:2] != SSI0_RX_HEADER:
         return {"ssi": ssi, "ok": False, "error": "unsupported_route"}
     d = plaintext[2:]

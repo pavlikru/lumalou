@@ -72,6 +72,12 @@ MPID frame:   0x7E | seq(4) | len+1(2) | crc8 | AES-128-CTR(SSI0-wrap + crc8)
 To receive data responses, first send the transport command `ENABLE_RX` (`01 50 01`). A response
 arrives as `SSI0 | FE-frame | [response_opcode] + data`.
 
+The exact plaintext transport event `00 7f 01 03` is a target-observed session
+acknowledgement. The Python client ignores this one fixed event without
+interpreting it as an application response; no other `00 7f` payload is
+accepted. Application responses still require the `01 50` route and a valid FE
+frame.
+
 ## Commands
 
 Full opcode and enum tables are in [`spec/protocol.json`](../spec/protocol.json). Highlights:

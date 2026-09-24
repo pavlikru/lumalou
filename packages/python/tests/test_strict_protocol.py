@@ -74,6 +74,15 @@ def test_known_non_fe_transport_notification_is_not_an_application_response():
     }
 
 
+def test_live_session_ack_on_007f_route_is_ignored_not_fatal():
+    """The verified session ACK observed on the target is transport-only."""
+    assert P.parse_response_frame(bytes.fromhex("00 7f 01 03")) == {
+        "ssi": "007f",
+        "ok": False,
+        "error": "unsupported_transport",
+    }
+
+
 def test_no_search_for_fe_inside_unrecognized_transport_payload():
     assert not P.parse_response_frame(bytes.fromhex("015000fe0218051f"))["ok"]
 
