@@ -35,5 +35,8 @@ lumalou = "lumalou.cli:main"
 where = ["src"]
 include = ["lumalou*"]
 
+[tool.setuptools.package-data]
+lumalou = ["THIRD_PARTY_NOTICES.md"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

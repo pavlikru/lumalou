@@ -34,6 +34,17 @@ service. **Never write to it** — a wrong write bricks the device.
 
 ## Handshake (local, no server)
 
+The Python `parse_factory_item_code` helper validates an exact 192-byte FACTORY
+token and verifies its ECDSA P-256/SHA-256 manufacturing signature before
+returning the signed six-byte item field as lowercase ASCII. It preserves all
+six characters; no GLD09 padding or item-code mapping has been established.
+An optional exact allowlist rejects unsupported item values. The source for
+the public verification key and field offsets is the independent MIT-licensed
+[`kvdb/gld09-control` project](https://github.com/kvdb/gld09-control/tree/6e3aff894b0065b760ba44f43a36c7e9988cead9),
+with attribution in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).
+The final four-byte salt is outside the signed region. This helper is pure and
+does not itself change the client's connection handshake.
+
 1. Read the MFG token from **factory**. It contains the device's compressed P-256 public key at
    bytes `[25:58]` and a 4-byte salt in the last 4 bytes.
 2. Generate an ephemeral P-256 keypair. Compute `shared = ECDH(app_priv, device_pub)` (X coord, 32 B).

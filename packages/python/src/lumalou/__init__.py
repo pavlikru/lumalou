@@ -45,6 +45,7 @@ from .client import (
     ResponseEnvelope,
     UnsupportedResponseError,
 )
+from .factory import InvalidFactoryTokenError, parse_factory_item_code
 from .profile import ClockSettings, MusicPlaylist, OpaqueBlock, RoutineMusicSettings
 from .protocol import build_tx_frame, crc8, decrypt_rx_frame, encode_command
 from .responses import CurrentDate
@@ -62,6 +63,7 @@ __all__ = [
     "CurrentDate",
     "DisconnectedError",
     "FreshSessionRequiredError",
+    "InvalidFactoryTokenError",
     "LightDuration",
     "LumalouAdvertisement",
     "LumalouClient",
@@ -85,4 +87,5 @@ __all__ = [
     "encode_command",
     "is_lumalou_advertisement",
     "parse_advertisement",
+    "parse_factory_item_code",
 ]
