@@ -43,15 +43,23 @@ the public verification key and field offsets is the independent MIT-licensed
 [`kvdb/gld09-control` project](https://github.com/kvdb/gld09-control/tree/6e3aff894b0065b760ba44f43a36c7e9988cead9),
 with attribution in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).
 The final four-byte salt is outside the signed region. This helper is pure and
-does not itself change the client's connection handshake.
+the client calls it on every connection. A token with an invalid signature,
+malformed signed key, or invalid item field is rejected before notification,
+key derivation, or any SESSION/TX write. Callers such as Home Assistant can
+also pass `expected_factory_item_code` to bind the session to one exact signed
+item value; a mismatch aborts and releases the transport.
 
-1. Read the MFG token from **factory**. It contains the device's compressed P-256 public key at
-   bytes `[25:58]` and a 4-byte salt in the last 4 bytes.
-2. Generate an ephemeral P-256 keypair. Compute `shared = ECDH(app_priv, device_pub)` (X coord, 32 B).
-3. Derive the session key by stretching: 100 rounds of AES-128-CTR over `shared`, each round using
+1. Read and authenticate the MFG token from **factory**. It contains the
+   device's compressed P-256 public key at bytes `[25:58]` and a 4-byte salt
+   in the last 4 bytes.
+2. If the caller supplied an expected item code, require an exact match with
+   the authenticated field.
+3. Generate an ephemeral P-256 keypair. Compute
+   `shared = ECDH(app_priv, device_pub)` (X coord, 32 B).
+4. Derive the session key by stretching: 100 rounds of AES-128-CTR over `shared`, each round using
    `key = shared[:16]` and IV `00 00 00 00 00 00 00 <counter> 00 "mattel" 00`. The first 16 bytes
    of the result are the AES-128 data-channel key.
-4. Write `app_pubkey_compressed(33) || app_nonce(4)` to **session**. The device performs the same
+5. Write `app_pubkey_compressed(33) || app_nonce(4)` to **session**. The device performs the same
    ECDH and derives the same key.
 
 ## Data frames

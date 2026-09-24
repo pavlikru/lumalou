@@ -37,6 +37,8 @@ from .advertisement import (
 )
 from .client import (
     DisconnectedError,
+    FactoryIdentityError,
+    FactoryIdentityMismatchError,
     FreshSessionRequiredError,
     LumalouClient,
     LumalouError,
@@ -67,6 +69,8 @@ __all__ = [
     "Color",
     "CurrentDate",
     "DisconnectedError",
+    "FactoryIdentityError",
+    "FactoryIdentityMismatchError",
     "FreshSessionRequiredError",
     "InvalidFactoryTokenError",
     "LightDuration",

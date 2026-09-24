@@ -8,9 +8,12 @@ acceptance of the client or profile restoration.
 
 ## Home Assistant connection boundary
 
-Construct `LumalouClient(ble_device, client_factory=..., on_response=...,
-disconnected_callback=...)`. `ble_device` can be the current `BLEDevice` supplied
-by Home Assistant. The factory has the normal Bleak constructor shape:
+Construct `LumalouClient(ble_device, expected_factory_item_code=...,
+client_factory=..., on_response=..., disconnected_callback=...)` when the
+application must bind sessions to a specific signed product item. `ble_device`
+can be the current `BLEDevice` supplied by Home Assistant. Even without an
+expected item pin, the client always requires a valid signed FACTORY token.
+The factory has the normal Bleak constructor shape:
 `factory(device, disconnected_callback=callback)` and returns a transport with
 async `connect`, `disconnect`, `start_notify`, `read_gatt_char`, and
 `write_gatt_char` methods. This supports an HA-aware adapter without changing
@@ -18,8 +21,11 @@ global Bleak functions. The callback supplied to `disconnected_callback` is
 synchronous and receives the `LumalouClient`, after state has been invalidated.
 
 `connect(timeout=20)` creates a new transport, keys, nonce, sequence and
-generation; it does not reuse a disconnected transport. It performs only the
-existing session handshake and ENABLE_RX, never clock/configuration commands.
+generation; it does not reuse a disconnected transport. On every connection it
+verifies the signed FACTORY token and compares the item code when pinned before
+notification, key derivation, SESSION, or TX. Identity failures abort and close
+the transport. It then performs the session handshake and ENABLE_RX, never
+clock/configuration commands.
 Passing a `BLEDevice` avoids Bleak's implicit address lookup. A string address
 and the explicitly called standalone `scan()` helper remain for CLI callers;
 HA must not use that helper. `connect` itself does not start an independent

@@ -10,16 +10,18 @@ import pytest
 from bleak.backends.device import BLEDevice
 from lumalou import client as module
 from lumalou import commands as C
-from lumalou import crypto
 from lumalou import protocol as P
 from lumalou.client import (
     DisconnectedError,
+    FactoryIdentityError,
+    FactoryIdentityMismatchError,
     FreshSessionRequiredError,
     LumalouClient,
     MalformedResponseError,
     RequestTimeoutError,
     UnsupportedResponseError,
 )
+from lumalou.factory import parse_factory_item_code
 
 pytestmark = pytest.mark.asyncio
 
@@ -29,7 +31,7 @@ READ_REQUESTS = json.loads(
 
 
 @pytest.fixture
-def rig(monkeypatch):
+def rig(monkeypatch, synthetic_factory_tokens):
     real_sleep = asyncio.sleep
 
     async def fast_sleep(_delay):
@@ -41,8 +43,13 @@ def rig(monkeypatch):
         "discover",
         Mock(side_effect=AssertionError("no scanner allowed")),
     )
-    _, public = crypto.generate_keypair()
-    token = bytes(25) + public + bytes(4)
+    make_factory_token, factory_keys = synthetic_factory_tokens
+    token = make_factory_token()
+    monkeypatch.setattr(
+        module,
+        "parse_factory_item_code",
+        lambda raw: parse_factory_item_code(raw, keys=factory_keys),
+    )
     device = BLEDevice("synthetic-device", "test", {})
     transports = []
     envelopes, states = [], []
@@ -105,6 +112,7 @@ def rig(monkeypatch):
 
     owner = LumalouClient(
         device,
+        expected_factory_item_code="010632",
         client_factory=Transport,
         on_response=envelopes.append,
         on_state=states.append,
@@ -112,6 +120,9 @@ def rig(monkeypatch):
     )
     return SimpleNamespace(
         client=owner,
+        device=device,
+        factory_token=token,
+        make_factory_token=make_factory_token,
         transports=transports,
         factory=Transport,
         envelopes=envelopes,
@@ -151,6 +162,95 @@ async def test_connect_device_factory_handshake_and_disconnect(rig):
     assert rig.client._key is None and rig.client._seq == 1
     assert transport.disconnect_count == 1
     rig.disconnected.assert_called_once_with(rig.client)
+
+
+async def test_valid_signed_factory_identity_connects_without_expected_item_pin(rig):
+    """Standalone clients still authenticate FACTORY when no SKU pin is given."""
+    client = LumalouClient(rig.device, client_factory=rig.factory)
+
+    await client.connect()
+
+    transport = rig.transports[0]
+    assert [write[0] for write in transport.writes] == [module.SESSION, module.TX]
+    await client.disconnect()
+
+
+async def test_invalid_factory_signature_writes_no_session_or_tx(
+    rig, monkeypatch, caplog
+):
+    """Signature verification remains mandatory without an expected item pin."""
+    tampered = bytearray(rig.factory_token)
+    tampered[124] ^= 0x01
+
+    async def read_tampered(_client, characteristic):
+        assert characteristic == module.FACTORY
+        return bytes(tampered)
+
+    monkeypatch.setattr(rig.factory, "read_gatt_char", read_tampered)
+    client = LumalouClient(rig.device, client_factory=rig.factory)
+    with pytest.raises(FactoryIdentityError):
+        await client.connect()
+
+    transport = rig.transports[0]
+    assert transport.notify_callback is None
+    assert transport.writes == []
+    assert transport.disconnect_count == 1
+    assert client._client is None and not client.connected
+    assert client._key is None and client._nonce is None and client._salt is None
+    assert not client._cleanup_tasks
+    assert "SYNTHETIC-SERIAL" not in caplog.text
+
+
+async def test_signed_factory_item_mismatch_writes_no_session_or_tx(rig):
+    """A valid token for another item cannot authorize this expected device."""
+    client = LumalouClient(
+        rig.device,
+        client_factory=rig.factory,
+        expected_factory_item_code="999999",
+    )
+
+    with pytest.raises(FactoryIdentityMismatchError):
+        await client.connect()
+
+    transport = rig.transports[0]
+    assert transport.notify_callback is None
+    assert transport.writes == []
+    assert transport.disconnect_count == 1
+
+
+async def test_reconnect_reauthenticates_expected_factory_item_before_writes(
+    rig, monkeypatch, caplog
+):
+    """Every new transport validates the signed item before SESSION/TX writes."""
+    first_transport = await connect(rig)
+    await rig.client.disconnect()
+
+    async def read_different_signed_item(_client, characteristic):
+        assert characteristic == module.FACTORY
+        return rig.make_factory_token("999999")
+
+    monkeypatch.setattr(rig.factory, "read_gatt_char", read_different_signed_item)
+    with pytest.raises(FactoryIdentityMismatchError) as error:
+        await rig.client.connect()
+
+    second_transport = rig.transports[-1]
+    assert second_transport is not first_transport
+    assert second_transport.notify_callback is None
+    assert second_transport.writes == []
+    assert second_transport.disconnect_count == 1
+    assert rig.client._client is None and not rig.client.connected
+    assert rig.client._key is None and rig.client._nonce is None
+    assert rig.client._salt is None and not rig.client._cleanup_tasks
+    assert "010632" not in str(error.value) and "999999" not in str(error.value)
+    assert "SYNTHETIC-SERIAL" not in caplog.text
+
+
+async def test_expected_factory_item_code_is_exact_and_canonical(rig):
+    """Reject accidental coercion or normalization of the runtime identity."""
+    with pytest.raises(ValueError, match="six-character lowercase ASCII"):
+        LumalouClient(rig.device, expected_factory_item_code="01063")
+    with pytest.raises(ValueError, match="six-character lowercase ASCII"):
+        LumalouClient(rig.device, expected_factory_item_code="ABC123")
 
 
 async def test_exact_response_envelope_and_detached_state(rig):
@@ -598,7 +698,7 @@ async def test_malformed_factory_token_never_reaches_session_write(rig, monkeypa
         return bytes(61)
 
     monkeypatch.setattr(rig.factory, "read_gatt_char", short_token)
-    with pytest.raises(MalformedResponseError):
+    with pytest.raises(FactoryIdentityError):
         await rig.client.connect()
     assert not rig.transports[0].writes and rig.transports[0].disconnect_count == 1
 

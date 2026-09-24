@@ -18,6 +18,7 @@ from . import crypto
 from . import protocol as P
 from . import responses as R
 from ._generated import GATT, RESPONSES
+from .factory import InvalidFactoryTokenError, parse_factory_item_code
 from .schedules import DAY_ROUTINE_RESPONSES
 
 SERVICE = GATT["service"]
@@ -45,6 +46,14 @@ class RequestTimeoutError(LumalouError, TimeoutError):
 
 class MalformedResponseError(LumalouError, ValueError):
     """A frame or a known typed payload failed validation."""
+
+
+class FactoryIdentityError(LumalouError):
+    """The device manufacturing identity could not be authenticated."""
+
+
+class FactoryIdentityMismatchError(FactoryIdentityError):
+    """The authenticated device does not match the caller's expected item."""
 
 
 class UnsupportedResponseError(LumalouError, ValueError):
@@ -139,13 +148,28 @@ class LumalouClient:
         on_response: Callable[[ResponseEnvelope], None] | None = None,
         client_factory: Callable[..., BleakClient] | None = None,
         disconnected_callback: Callable[[LumalouClient], None] | None = None,
+        expected_factory_item_code: str | None = None,
     ):
+        if expected_factory_item_code is not None and (
+            not isinstance(expected_factory_item_code, str)
+            or len(expected_factory_item_code) != 6
+            or not expected_factory_item_code.isascii()
+            or expected_factory_item_code != expected_factory_item_code.lower()
+            or any(
+                not 0x20 <= ord(character) <= 0x7E
+                for character in expected_factory_item_code
+            )
+        ):
+            raise ValueError(
+                "expected factory item code must be six-character lowercase ASCII"
+            )
         self.address = address
         self.connected = False
         self._on_state = on_state
         self._on_response = on_response
         self._client_factory = client_factory
         self._disconnected_callback = disconnected_callback
+        self._expected_factory_item_code = expected_factory_item_code
         self._client: BleakClient | None = None
         self._key = self._nonce = self._salt = None
         self._seq = 1
@@ -305,8 +329,19 @@ class LumalouClient:
         self._require_session(generation, handshaking=True)
         token = bytes(await client.read_gatt_char(FACTORY))
         self._require_session(generation, handshaking=True)
-        if len(token) < 62:
-            raise MalformedResponseError("factory token is too short")
+        try:
+            factory_item_code = parse_factory_item_code(token)
+        except InvalidFactoryTokenError as error:
+            raise FactoryIdentityError(
+                "device factory identity could not be authenticated"
+            ) from error
+        if (
+            self._expected_factory_item_code is not None
+            and factory_item_code != self._expected_factory_item_code
+        ):
+            raise FactoryIdentityMismatchError(
+                "device factory identity does not match the expected item"
+            )
         device_pub = crypto.token_device_pubkey(token)
         self._salt = crypto.token_device_salt(token)
         priv, pub = crypto.generate_keypair()
