@@ -22,7 +22,7 @@ class MusicPlaylist:
     def __post_init__(self) -> None:
         _tuple(self.slots, 12, "playlist slots")
         for value in self.slots:
-            _integer(value, 0, 18, "song")
+            _integer(value, 0, 12, "playlist song")
 
     @classmethod
     def from_songs(cls, songs: Iterable[int]) -> MusicPlaylist:
@@ -33,7 +33,7 @@ class MusicPlaylist:
         """
         slots = []
         for song in songs:
-            _integer(song, 0, 18, "song")
+            _integer(song, 0, 12, "playlist song")
             if song:
                 if len(slots) == 12:
                     raise ValueError("playlist holds at most twelve songs")
@@ -43,7 +43,7 @@ class MusicPlaylist:
 
 def encode_music_playlist(value: MusicPlaylist) -> bytes:
     if not isinstance(value, MusicPlaylist):
-        raise ValueError("playlist must be MusicPlaylist")
+        raise TypeError("playlist must be MusicPlaylist")
     return bytes(value.slots)
 
 
@@ -67,7 +67,7 @@ class ClockSettings:
 
 def encode_clock_settings(value: ClockSettings) -> bytes:
     if not isinstance(value, ClockSettings):
-        raise ValueError("settings must be ClockSettings")
+        raise TypeError("settings must be ClockSettings")
     return bytes((int(value.display_on), value.brightness << 4 | value.format))
 
 
@@ -99,7 +99,7 @@ class RoutineMusicSettings:
 
 def encode_routine_music_settings(value: RoutineMusicSettings) -> bytes:
     if not isinstance(value, RoutineMusicSettings):
-        raise ValueError("settings must be RoutineMusicSettings")
+        raise TypeError("settings must be RoutineMusicSettings")
     return bytes((value.music, value.task_reward << 4 | value.routine_reward))
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ._generated import RESPONSES, Color, OperationMode, Stage
+from .profile import ClockSettings, MusicPlaylist
 from .schedules import (
     DAY_ROUTINE_RESPONSES,
     DailyRoutine,
@@ -50,6 +51,27 @@ def parse_current_date(args: bytes) -> CurrentDate:
     if any(byte >> 4 > 9 or byte & 0x0F > 9 for byte in args):
         raise ValueError("CURRENT_DATE contains invalid BCD")
     return CurrentDate(*(10 * (byte >> 4) + (byte & 0x0F) for byte in args))
+
+
+def parse_music_playlist(args: bytes) -> MusicPlaylist:
+    """Decode the observed ordered 12-byte playlist response (0x19)."""
+    if not isinstance(args, bytes) or len(args) != 12:
+        raise ValueError("MUSIC_PLAYLIST must contain exactly 12 bytes")
+    if any(song > 12 for song in args):
+        raise ValueError("MUSIC_PLAYLIST contains a song ID outside 0..12")
+    return MusicPlaylist(tuple(args))
+
+
+def parse_clock_settings(args: bytes) -> ClockSettings:
+    """Decode the target-observed two-byte clock settings response (0x99)."""
+    if not isinstance(args, bytes) or len(args) != 2:
+        raise ValueError("CLOCK_SETTINGS must contain exactly 2 bytes")
+    if args[0] not in (0, 1):
+        raise ValueError("CLOCK_SETTINGS has an unknown display value")
+    brightness, clock_format = args[1] >> 4, args[1] & 0x0F
+    if brightness > 9 or clock_format > 1:
+        raise ValueError("CLOCK_SETTINGS has unsupported reserved bits")
+    return ClockSettings(bool(args[0]), brightness, clock_format)
 
 
 def parse_r2r_times(args: bytes) -> WeeklyTimes:

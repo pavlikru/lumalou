@@ -72,6 +72,10 @@ class ResponseEnvelope:
                 return R.parse_global_state(self.args)
             if self.opcode == 0x13:
                 return R.parse_current_date(self.args)
+            if self.opcode == 0x19:
+                return R.parse_music_playlist(self.args)
+            if self.opcode == 0x99:
+                return R.parse_clock_settings(self.args)
             return R.parse_schedule_response(self.opcode, self.args)
         except ValueError as err:
             if self.opcode in _TYPED_RESPONSES:
@@ -81,7 +85,17 @@ class ResponseEnvelope:
             ) from err
 
 
-_TYPED_RESPONSES = {0x02, 0x13, 0x22, 0x23, 0x27, 0x94, *DAY_ROUTINE_RESPONSES.values()}
+_TYPED_RESPONSES = {
+    0x02,
+    0x13,
+    0x19,
+    0x22,
+    0x23,
+    0x27,
+    0x94,
+    0x99,
+    *DAY_ROUTINE_RESPONSES.values(),
+}
 _REQUEST_RESPONSES = {
     "global_state": 0x02,
     "current_date": 0x13,
@@ -529,6 +543,6 @@ class LumalouClient:
         await self.send(C.set_global_on(on))
 
     async def sync_time(self, when: datetime.datetime | None = None):
-        d = when or datetime.datetime.now()
+        d = when or datetime.datetime.now().astimezone()
         weekday = (d.weekday() + 1) % 7  # Python Mon=0..Sun=6 -> device Sun=0..Sat=6
         await self.send(C.set_current_date(d.hour, d.minute, d.second, weekday))

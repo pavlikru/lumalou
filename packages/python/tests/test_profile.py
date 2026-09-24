@@ -85,7 +85,7 @@ def test_every_playlist_byte_in_every_slot():
     for slot in range(12):
         for song in range(256):
             raw = bytes(song if i == slot else 0 for i in range(12))
-            if song <= 18:
+            if song <= 12:
                 assert encode_music_playlist(decode_music_playlist_set(raw)) == raw
             else:
                 with pytest.raises(ValueError):
@@ -223,13 +223,11 @@ def test_mode_flags_require_explicit_booleans(builder, opcode):
 @pytest.mark.parametrize(
     "opcode,args",
     [
-        (0x19, bytes(12)),
-        (0x99, bytes(2)),
         (0x93, bytes(2)),
         (0x12, b"1.2"),
     ],
 )
-def test_set_lengths_do_not_invent_response_schemas(opcode, args):
+def test_unimplemented_response_layouts_are_not_guessed(opcode, args):
     envelope = ResponseEnvelope(opcode, args, 1, 0.0, 1)
     with pytest.raises(UnsupportedResponseError):
         envelope.decode()

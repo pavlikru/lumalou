@@ -53,12 +53,13 @@ explicit seven-day response map, including Friday `90` and Saturday `91`.
 `state` is a detached last observation of the current live session only.
 Unsolicited valid GLOBAL_STATE notifications update it and call `on_state`.
 
-`ResponseEnvelope.decode()` returns the strict GLOBAL_STATE, CURRENT_DATE, or
-typed schedule / routine / task-status model when a layout is established. Playlist, clock settings and
-other presently unimplemented payload decoders raise `UnsupportedResponseError`
-instead of guessing fields. Their envelopes still preserve raw payloads for
-further protocol work. Receiving all those raw blocks is not yet a verified
-complete backup or restore API.
+`ResponseEnvelope.decode()` returns strict GLOBAL_STATE, CURRENT_DATE,
+MUSIC_PLAYLIST, CLOCK_SETTINGS, schedule, routine, or task-status models when a
+layout is established. Other presently unimplemented payload decoders raise
+`UnsupportedResponseError` instead of guessing fields. Fresh playlist and
+clock-settings replies were read from one target and cross-checked against its
+observed state; compatibility with other firmware remains untested. Typed reads
+do not by themselves implement or verify restore.
 
 ### CURRENT_DATE is a transient clock reading
 
@@ -122,19 +123,19 @@ No new typed decoders are added for these replies. The deployed notification
 dispatcher decodes only global state, daily routines, task status, weekly times
 and weekly alarms. Existing setters and fields in GLOBAL_STATE prove their own
 encodings, not the byte length or nibble placement of the standalone responses.
-In particular, the 12-byte playlist setter does not establish the `19` reply
-layout, and the two-byte clock setter does not establish the `99` reply layout.
-The displayed clock values come from GLOBAL_STATE; the playlist editor's local
-state is not a readback decoder. All those individual replies therefore remain
-raw `ResponseEnvelope`s and `decode()` explicitly rejects them. A correctly
-framed raw envelope can contain arbitrary-length bytes: this is transport
-validation, not validation or restore approval for the contained configuration.
+The `19` response was freshly read as twelve ordered song IDs, all within the
+device's supported `0..12` playlist range. The `99` response was freshly read as
+two bytes matching the clock's display flag and packed brightness/format. The
+decoders enforce these exact observed shapes. A correctly framed raw envelope
+for any other response can contain arbitrary-length bytes: transport
+validation is not validation or restore approval for that configuration.
 
 Tests check every literal query opcode, completeness against the declared
 request constants, every Python response mapping, and exact outgoing encrypted
 query plaintext with a fake BLE transport. They also verify raw preservation,
-fresh-session enforcement and rejected unknown/unsafe names. No new device
-queries or writes were issued to establish these tests.
+fresh-session enforcement and rejected unknown/unsafe names. Hardware reads
+established the current playlist and clock response lengths; no settings write
+was issued for those observations.
 
 ## No invented request correlation
 
@@ -190,9 +191,9 @@ declared encrypted-body length including CRC byte, header CRC-8 and decrypted
 body CRC-8. An FE frame has an exact nonzero declared application length and
 the documented XOR checksum. Application responses use the `01 50` route,
 present in both the independent `rxDecrypt` / `responseFrame` golden vectors
-and their generator. A separate target-observed exact transport acknowledgement
-`00 7f 01 03` is ignored and cannot satisfy a request. Bare FE data, the transmit
-route `01 10`, and all other SSI routes are rejected, not guessed from channel
+and their generator. Two exact target-observed transport acknowledgements
+(`00 7f 01 03 00 00 00 00 00` and `00 7f 01 06 00 00 00 00 00`) are ignored
+and cannot satisfy a request. Bare FE data, the transmit route `01 10`, and all other SSI routes are rejected, not guessed from channel
 bytes. This is the supported application receive allowlist, not a claim that no
 other firmware route can ever exist. New routes require source-backed vectors
 before support. Parsing never searches

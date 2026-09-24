@@ -101,7 +101,7 @@ class WeeklyTimes:
 
 def encode_weekly_times(week: WeeklyTimes) -> bytes:
     if not isinstance(week, WeeklyTimes):
-        raise ValueError("week must be WeeklyTimes")
+        raise TypeError("week must be WeeklyTimes")
     return b"".join(_encode_time(value) for value in week.days)
 
 
@@ -129,7 +129,7 @@ class WeeklyAlarms:
 
 def encode_weekly_alarms(alarms: WeeklyAlarms) -> bytes:
     if not isinstance(alarms, WeeklyAlarms):
-        raise ValueError("alarms must be WeeklyAlarms")
+        raise TypeError("alarms must be WeeklyAlarms")
     values = (*alarms.days, alarms.sound)
     return bytes(values[index] << 4 | values[index + 1] for index in range(0, 8, 2))
 
@@ -191,7 +191,7 @@ class DailyRoutine:
 
 def encode_daily_routine(routine: DailyRoutine) -> bytes:
     if not isinstance(routine, DailyRoutine):
-        raise ValueError("routine must be DailyRoutine")
+        raise TypeError("routine must be DailyRoutine")
     return _encode_time(routine.time) + bytes(
         0 if slot is None else slot.step << 4 | slot.task for slot in routine.slots
     )
@@ -232,7 +232,7 @@ def decode_routine_task_status(data: bytes) -> RoutineTaskStatus:
 def encode_routine_task_status(status: RoutineTaskStatus) -> bytes:
     """Lossless runtime-status serialization, NOT a SET command (0x68 is REQUEST)."""
     if not isinstance(status, RoutineTaskStatus):
-        raise ValueError("status must be RoutineTaskStatus")
+        raise TypeError("status must be RoutineTaskStatus")
     return bytes((status.current_step,)) + bytes(
         status.task_states[index] << 4 | status.task_states[index + 1]
         for index in range(0, 12, 2)

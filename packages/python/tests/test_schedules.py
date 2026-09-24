@@ -237,7 +237,7 @@ def test_models_cannot_hide_mutable_or_invalid_children():
 )
 def test_encoders_require_typed_validated_models(encoder):
     for value in (None, {}, [], bytes(14)):
-        with pytest.raises(ValueError):
+        with pytest.raises(TypeError):
             encoder(value)
 
 

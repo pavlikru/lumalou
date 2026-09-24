@@ -74,13 +74,29 @@ def test_known_non_fe_transport_notification_is_not_an_application_response():
     }
 
 
-def test_live_session_ack_on_007f_route_is_ignored_not_fatal():
-    """The verified session ACK observed on the target is transport-only."""
-    assert P.parse_response_frame(bytes.fromhex("00 7f 01 03")) == {
-        "ssi": "007f",
+@pytest.mark.parametrize(
+    "ack",
+    [
+        "00 7f 01 03 00 00 00 00 00",
+        "00 7f 01 06 00 00 00 00 00",
+        "01 10 04 00",
+    ],
+)
+def test_live_transport_acks_on_007f_route_are_ignored_not_fatal(ack):
+    """Exact ACKs observed on the target are not application responses."""
+    assert P.parse_response_frame(bytes.fromhex(ack)) == {
+        "ssi": bytes.fromhex(ack)[:2].hex(),
         "ok": False,
         "error": "unsupported_transport",
     }
+    for malformed in (
+        "00 7f 01 03",
+        "00 7f 01 06 00 00 00 00 01",
+        "01 10 04 01",
+    ):
+        result = P.parse_response_frame(bytes.fromhex(malformed))
+        assert not result["ok"]
+        assert result["error"] == "unsupported_route"
 
 
 def test_no_search_for_fe_inside_unrecognized_transport_payload():

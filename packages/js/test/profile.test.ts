@@ -49,7 +49,7 @@ test("all 65536 music/reward SET encodings retain unknown semantics", () => {
 test("every possible playlist byte in every slot", () => {
   for (let slot = 0; slot < 12; slot++) for (let song = 0; song < 256; song++) {
     const raw = new Uint8Array(12); raw[slot] = song;
-    if (song <= 18) assert.deepEqual(P.encodeMusicPlaylist(P.decodeMusicPlaylistSet(raw)), raw);
+    if (song <= 12) assert.deepEqual(P.encodeMusicPlaylist(P.decodeMusicPlaylistSet(raw)), raw);
     else {
       assert.throws(() => P.decodeMusicPlaylistSet(raw));
       assert.deepEqual(new P.OpaqueBlock(raw, 12).data, raw);
@@ -69,7 +69,7 @@ test("wrong lengths, input types, overflow and coercion never silently truncate 
   assert.throws(() => C.setMusicPlaylist(new Array(13).fill(1)));
   assert.throws(() => C.setMusicPlaylist(new Array(12))); // sparse values must not turn into zero
   assert.throws(() => C.setMusicPlaylist({ slots: new Array(12) }));
-  for (const bad of [-1, 19, 1.5, "1", true, null]) assert.throws(() => C.setMusicPlaylist([bad as number]));
+  for (const bad of [-1, 13, 1.5, "1", true, null]) assert.throws(() => C.setMusicPlaylist([bad as number]));
   for (const bad of [0, 1, null, "false"]) assert.throws(() => C.setClockSettings(bad as never, 0, 0));
   for (const bad of [-1, 10, 1.5, "1", true]) assert.throws(() => C.setClockSettings(true, bad as number, 0));
   for (const bad of [-1, 2, 1.5, "1", true]) assert.throws(() => C.setClockSettings(true, 0, bad as number));

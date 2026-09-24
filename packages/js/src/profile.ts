@@ -17,7 +17,7 @@ export interface RoutineMusicSettings { readonly music: number; readonly taskRew
 export function playlistFromSongs(songs: readonly number[]): MusicPlaylist {
   const slots: number[] = [];
   for (const song of songs) {
-    integer(song, 0, 18, "song");
+    integer(song, 0, 12, "playlist song");
     if (song) {
       if (slots.length === 12) throw new Error("playlist holds at most twelve songs");
       slots.push(song);
@@ -28,7 +28,7 @@ export function playlistFromSongs(songs: readonly number[]): MusicPlaylist {
 
 export function encodeMusicPlaylist(value: MusicPlaylist): Uint8Array {
   if (!Array.isArray(value.slots) || value.slots.length !== 12) throw new Error("playlist needs twelve slots");
-  return Uint8Array.from(Array.from(value.slots, v => integer(v, 0, 18, "song")));
+  return Uint8Array.from(Array.from(value.slots, v => integer(v, 0, 12, "playlist song")));
 }
 
 export function decodeMusicPlaylistSet(data: Uint8Array): MusicPlaylist {

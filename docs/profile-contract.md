@@ -20,7 +20,10 @@ synthetic examples, **not hardware captures**.
 
 Audited symbols in that exact artifact:
 
-- `_h`: validate song IDs 0–18, filter zero, truncate to twelve, pad with zero.
+- `_h`: the web UI helper validates IDs 0–18, filters zero, truncates to twelve,
+  and pads with zero. This is UI implementation evidence only. An independent
+  GLD09 hardware controller reports the device rejects playlist IDs above 12;
+  the strict Python/JavaScript SET contract therefore accepts only 0–12.
 - `xh`: clock SET arguments are `[display_on, brightness << 4 | format]`;
   display is 0/1, brightness 0–9, format 0/1. The first high nibble is zero.
 - `Ih`: routine music/reward SET arguments are
@@ -41,7 +44,7 @@ Audited symbols in that exact artifact:
 
 | Representation | SET command | Guarantee / limit |
 | --- | --- | --- |
-| `MusicPlaylist` | 40 | Exactly twelve slots, IDs 0–18; order, duplicates and zero positions retained. `from_songs` / `playlistFromSongs` filters zero for explicit edits, rejects more than twelve nonzero IDs instead of silently truncating. Interior zero acceptance by hardware is unverified. |
+| `MusicPlaylist` | 40 | Exactly twelve slots, IDs 0–12; an independent GLD09 controller reports the device rejects IDs above 12. Order, duplicates and zero positions are retained; interior zero acceptance by hardware remains unverified. `from_songs` / `playlistFromSongs` filters zero for explicit edits and rejects overflow instead of truncating. |
 | `ClockSettings` | 79 | Strict boolean display, brightness 0–9, format 0/1. No masking/coercion; reserved high nibble must be zero. |
 | `RoutineMusicSettings` | 69 | Full music byte and reward nibbles retained; no narrowing to boolean or guessed sound enum. All three fields must be explicit. |
 | Weekly times, weekly alarms, daily routines | 46 / 48 / 4A / day SET | Existing Python codecs now have JavaScript counterparts and shared literal vectors. |
@@ -79,17 +82,21 @@ day requests remain in `spec/schedule-vectors.json`.
 | `r2r_alarms` | Exactly 4 bytes, seven alarm nibbles and uninterpreted sound nibble. |
 | Seven `request_day_routine` days | Exactly 14 bytes; preserve original slot positions, zeros, step numbers and task order. Friday/Saturday responses are 90/91, not contiguous with Sunday–Thursday 2B–2F. |
 | `routine_task_status` | Exactly 7 bytes: current-step byte and twelve raw state nibbles. State meanings/sentinels unproven; runtime-only. |
-| `music_playlist`, `clock_settings`, `routine_music_status` | No standalone response length or field layout established. SET lengths cannot be substituted. Clock/reward fields are available only through GLOBAL_STATE's mapping. |
+| `music_playlist` | Exactly 12 ordered slots, IDs 0–12; verified from a fresh response on the target. IDs above 12 are rejected by the independent GLD09 controller and by the strict playlist model. |
+| `clock_settings` | Exactly two bytes `[display, brightness<<4 | format]`; target response matched the independently observed display/brightness/format values and SET encoding. Display is 0/1, brightness 0–9, format 0/1; reserved values fail. |
+| `routine_music_status` | Standalone response layout remains unknown. Routine music/reward settings are included in GLOBAL_STATE's mapping; do not infer a `0x93` schema from SET arguments. |
 | `current_date` | Exactly 4 BCD bytes: hour 0–23, minute/second 0–59, Sunday-first weekday 0–6. Typed immutable `CurrentDate`, established by read-only target observations consistent with the existing SET encoding. Transient clock only: no calendar date, timezone or persistent profile value. |
 | `toyic_fw_version` | No response length or field encoding established. No firmware string/endianness/zero-termination assumptions. |
 | `led_brightness`, `light_color`, `light_duration`, `volume`, `routine_volume`, `song_playing`, `playlist_duration` | Named response identities only; no dedicated response payload schema in the pinned bundle. Related GLOBAL_STATE fields do not establish standalone reply lengths. |
 | `operation_mode`, `activity_state`, `current_stage`, `transmission_mode`, `time_prescaler` | Named response identities only. Prescaler SET remains prohibited. |
 | `routine_mode_status`, `r2r_status`, `r2r_alarm_status`, `nap_current_status`, `nap_alarm_status`, `nap_alarm` | Named response identities only; scalar/boolean length and value interpretation must not be invented. |
 
-Consequently there is **no complete fresh typed profile** yet. Playlist content
-readback is missing even though playlist SET is implemented. A collection of
-raw, well-framed replies must not be called a semantically validated snapshot.
-The Python client still checks generation and response identity and never
+Playlist and clock readback have typed layouts from a single target read. A
+complete profile read now has a typed path for every persistent profile block
+modeled in this package: GLOBAL_STATE fields, ordered playlist, clock settings,
+seven routines, weekly times and weekly alarms. This does not yet establish
+cross-firmware support, hardware-safe SET side effects, verified restore, or
+automatic restore. The Python client still checks generation and response identity and never
 substitutes cached values. Existing conservative same-opcode freshness limits
 continue to apply; this extension adds no transaction-correlation claims.
 
@@ -106,7 +113,7 @@ though the wire builder accepts task ID zero inside a nonzero step. This does
 not justify treating task zero as an empty slot: `10` is not padding `00`.
 These labels remain documentation, not new firmware enums.
 
-The `Dh` song-name array matches existing `Song` IDs 0–18: no song, Sleep Baby
+The `Dh` song-name array maps `GLOBAL_STATE.currentSong` IDs 0–18: no song, Sleep Baby
 Sleep, Hour Glass, Frère Jacques, How Lovely the Evening, Tárrega Lágrima,
 What's the Matter Dear, Suo Gân, Water Color Dreams, Dance of the Jellyfish,
 Inside the Bubble, Paper Kites, Crickets in Space, Pink Noise, Ocean, Rain,
@@ -145,13 +152,14 @@ execution. Source tests cannot establish these properties.
 
 ## Executed checks
 
-Python 3.10, 3.11 and 3.12: **360 tests passed** on each interpreter. JavaScript:
-typecheck, **20 tests**, and production/declaration builds passed. Test loops
+Python 3.10, 3.11 and 3.12: **681 tests passed** on each interpreter. JavaScript:
+typecheck, **24 tests**, and production/declaration builds passed. Test loops
 exhaust all 65,536 clock SET pairs (exactly forty supported encodings), all
 65,536 music/reward SET pairs, all BCD time pairs, all task bytes in each routine
 slot, all playlist bytes in each slot, and every runtime task-status byte in
 each position. Shared literal vectors cover all seven day identities.
 
-Code generation ran with no generated diff. Scoped Python E/F lint (excluding
-the repository's pre-existing lambda/line-length style), import sorting,
-format checks and `git diff --check` passed. No hardware acceptance is implied.
+Code generation ran with no generated diff. Scoped Python lint and format checks
+for changed protocol, codec and test files passed. Factory and response parser
+tests use synthetic signatures/payloads; read-only hardware evidence is recorded
+separately. No setter behavior or restore acceptance is implied.

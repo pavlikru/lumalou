@@ -303,8 +303,6 @@ async def test_unknown_opcode_is_explicit_unsupported_error(rig):
         ("r2r_times", 0x22, bytes(14)),
         ("sleepy_times", 0x23, b"\xff" * 14),
         ("r2r_alarms", 0x27, bytes.fromhex("99999990")),
-        ("music_playlist", 0x19, b"\x01\x02"),
-        ("clock_settings", 0x99, b"\x01"),
         ("routine_task_status", 0x94, bytes(7)),
     ],
 )
@@ -330,8 +328,20 @@ async def test_every_named_request_sends_exact_query_and_matches_response(rig, v
     transport = await connect(rig)
     opcode = int(vector["response"], 16)
     # Known structured replies must pass strict decoding; all others remain raw.
-    sizes = {0x02: 13, 0x13: 4, 0x22: 14, 0x23: 14, 0x27: 4, 0x94: 7}
-    args = bytes(sizes[opcode]) if opcode in sizes else b"\x12\x34\xff"
+    sizes = {
+        0x02: 13,
+        0x13: 4,
+        0x19: 12,
+        0x22: 14,
+        0x23: 14,
+        0x27: 4,
+        0x94: 7,
+        0x99: 2,
+    }
+    args = {
+        0x19: bytes(range(1, 13)),
+        0x99: bytes.fromhex("0121"),
+    }.get(opcode, bytes(sizes[opcode]) if opcode in sizes else b"\x12\x34\xff")
 
     async def reply(frame):
         key, nonce, salt = transport.keys
@@ -346,6 +356,10 @@ async def test_every_named_request_sends_exact_query_and_matches_response(rig, v
     transport.on_write = reply
     envelope = await rig.client.request_named(vector["name"])
     assert envelope.opcode == opcode and envelope.args == args
+    if opcode == 0x19:
+        assert envelope.decode().slots == tuple(range(1, 13))
+    elif opcode == 0x99:
+        assert envelope.decode().brightness == 2
     assert envelope.generation == rig.client.generation
     writes = len(transport.writes)
     with pytest.raises(FreshSessionRequiredError):
@@ -677,7 +691,7 @@ async def test_invalid_route_never_completes_request_or_publishes_state(rig, pre
     [
         (0x02, bytes(13), "global_state"),
         (0x22, bytes(14), "r2r_times"),
-        (0x99, b"\x00", "clock_settings"),
+        (0x99, b"\x00\x00", "clock_settings"),
     ],
 )
 async def test_unsolicited_opcode_blocks_request_before_any_write(
