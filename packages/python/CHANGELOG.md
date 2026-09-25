@@ -4,6 +4,19 @@ All notable changes to the `lumalou-gld09` distribution (a fork of
 [stramanu/lumalou](https://github.com/stramanu/lumalou)) are documented here.
 The import package remains `lumalou`.
 
+## Unreleased
+
+### Changed
+
+- `play_audio` (0-7), `start_nap` (0-11), `routine_control` (0-4) and
+  `set_current_date` (hour 0-23, minute and second 0-59, weekday 0-6) reject
+  out-of-range values with `ValueError` instead of sending them.
+  `set_global_on` requires a boolean.
+- `lumalou send` refuses the spec's unsafe opcodes (`SET_TIME_PRESCALER`
+  0x52, `SEND_PAIRING_COMPLETE` 0x34), as the web client does.
+- Documented that `SET_LIGHT_COLOR` is the web client's light-on action and
+  `SET_GLOBAL_ON` starts the soother (light and sound).
+
 ## 0.2.1 - 2026-09-25
 
 ### Fixed

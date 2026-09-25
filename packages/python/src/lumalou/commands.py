@@ -42,6 +42,10 @@ def reduce_low_nibbles(values) -> bytes:
 
 
 # ---- light ----
+# The deployed web client has no separate "light on" command: picking a colour
+# (SET_LIGHT_COLOR) is its light-on action and "Turn light off" sends
+# TURN_OFF_CLOUD_BACKLIGHT. A brightness write alone was observed on hardware
+# not to switch the light on.
 def set_light_color(color) -> bytes:
     return _u8(COMMANDS["SET_LIGHT_COLOR"], _integer(color, 0, 9, "color"))
 
@@ -63,7 +67,8 @@ def turn_off_backlight() -> bytes:
 
 # ---- audio ----
 def play_audio(source) -> bytes:
-    return _u8(COMMANDS["PLAY_AUDIO"], int(source))
+    # Audio enum 0..7, as validated by the deployed web client.
+    return _u8(COMMANDS["PLAY_AUDIO"], _integer(source, 0, 7, "audio source"))
 
 
 def turn_off_audio() -> bytes:
@@ -100,6 +105,14 @@ def set_routine_volume(level: int) -> bytes:
 
 # ---- system ----
 def set_global_on(on: bool) -> bytes:
+    """Start (True) or stop (False) the soother: light *and* sound.
+
+    This is the deployed web client's "Start/Stop soother" control, not a
+    light-only switch. Light on is ``set_light_color``, light off is
+    ``turn_off_backlight``.
+    """
+    if type(on) is not bool:
+        raise ValueError("soother state must be a boolean")
     return _u8(COMMANDS["SET_GLOBAL_ON"], 1 if on else 0)
 
 
@@ -135,8 +148,13 @@ def set_global_state(
 
 
 def set_current_date(hour, minute, second, weekday) -> bytes:
+    """Set the device clock; weekday counts Sunday as 0. No calendar date."""
     return _u8(
-        COMMANDS["SET_CURRENT_DATE"], bcd(hour), bcd(minute), bcd(second), bcd(weekday)
+        COMMANDS["SET_CURRENT_DATE"],
+        bcd(_integer(hour, 0, 23, "hour")),
+        bcd(_integer(minute, 0, 59, "minute")),
+        bcd(_integer(second, 0, 59, "second")),
+        bcd(_integer(weekday, 0, 6, "weekday")),
     )
 
 
@@ -154,7 +172,8 @@ def set_r2r_status(on: bool) -> bytes:
 
 
 def start_nap(duration) -> bytes:
-    return _u8(COMMANDS["START_NAP_TIME"], int(duration))
+    # NapDuration enum 0..11 (0 = inactive), as validated by the web client.
+    return _u8(COMMANDS["START_NAP_TIME"], _integer(duration, 0, 11, "nap duration"))
 
 
 def set_nap_alarm(alarm) -> bytes:
@@ -192,7 +211,10 @@ def start_routine_mode() -> bytes:
 
 
 def routine_control(ctrl) -> bytes:
-    return _u8(COMMANDS["ROUTINE_CONTROL_COMMAND"], int(ctrl))
+    # RoutineControl enum 0..4.
+    return _u8(
+        COMMANDS["ROUTINE_CONTROL_COMMAND"], _integer(ctrl, 0, 4, "routine control")
+    )
 
 
 def _day_opcode(operation: str, day: Day) -> int:

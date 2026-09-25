@@ -102,6 +102,21 @@ Full opcode and enum tables are in [`spec/protocol.json`](../spec/protocol.json)
 `SET_GLOBAL_ON (0x03)`, `START_NAP_TIME (0x4D)`, `SET_CURRENT_DATE (0x30)`,
 `REQUEST_GLOBAL_STATE (0x53)` (runtime summary).
 
+### Live control semantics
+
+How the deployed web client (bundle `index-CP__DzxD.js`) drives the light and
+the soother. These are client conventions; only the brightness observation is
+from hardware.
+
+| Action | Command | Notes |
+|---|---|---|
+| Light on / change colour | `SET_LIGHT_COLOR (0x3C) color` | The web client has no separate light-on command; tapping a colour swatch sends only this. |
+| Brightness | `SET_LED_BRIGHTNESS (0x3A) 0..9` | Hardware observation: sent while the light is off, it did not switch the light on. |
+| Light off | `TURN_OFF_CLOUD_BACKLIGHT (0x3E)` | No arguments. |
+| Start / stop soother | `SET_GLOBAL_ON (0x03) 1/0` | Toggled from `GLOBAL_STATE.activityState`; soothing is light *and* sound. Not a light switch. |
+
+`SET_GLOBAL_STATE (0x01)` is not used by the web client.
+
 `GLOBAL_STATE` (response `0x02`) is a 26-nibble runtime summary covering selected
 mode, light, audio, timer, clock, and routine fields. It is not a complete
 configuration snapshot: it omits the custom playlist, weekly times and alarms,

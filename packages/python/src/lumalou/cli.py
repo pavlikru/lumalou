@@ -6,7 +6,7 @@ import argparse
 import asyncio
 import json
 
-from ._generated import Color
+from ._generated import COMMANDS, Color
 from .client import LumalouClient
 
 _COLORS = {c.name.lower(): int(c) for c in Color}
@@ -20,6 +20,21 @@ _AUDIO = {
     "nature": 6,
     "highway": 7,
 }
+
+
+# spec/protocol.json "unsafeCommands"; the deployed web client refuses them too.
+_UNSAFE_OPCODES = frozenset(
+    {COMMANDS["SET_TIME_PRESCALER"], COMMANDS["SEND_PAIRING_COMPLETE"]}
+)
+
+
+def _raw_command(text: str) -> bytes:
+    data = bytes.fromhex(text)
+    if not data:
+        raise SystemExit("nothing to send")
+    if data[0] in _UNSAFE_OPCODES:
+        raise SystemExit(f"refusing unsafe opcode 0x{data[0]:02x}")
+    return data
 
 
 def _color_id(v):
@@ -50,6 +65,7 @@ async def _run(args):
             )
         return
 
+    raw = _raw_command(args.hex) if args.cmd == "send" else None
     address = await _resolve_address(args.address)
     async with LumalouClient(address) as luma:
         if args.cmd == "state":
@@ -76,7 +92,7 @@ async def _run(args):
             await luma.sync_time()
             print("clock synced")
         elif args.cmd == "send":
-            await luma.send(bytes.fromhex(args.hex))
+            await luma.send(raw)
 
 
 def build_parser():
@@ -95,9 +111,14 @@ def build_parser():
     li.add_argument(
         "-c",
         "--color",
-        help="warm|red|yellow|orange|green|blue|purple|night_light|cool|rainbow or 0-9",
+        help=(
+            "warm|red|yellow|orange|green|blue|purple|night_light|cool|rainbow "
+            "or 0-9 (switches the light on)"
+        ),
     )
-    li.add_argument("-b", "--brightness", type=int, help="0-9")
+    li.add_argument(
+        "-b", "--brightness", type=int, help="0-9 (does not switch the light on)"
+    )
     li.add_argument("--off", action="store_true", help="turn the light off")
 
     au = sub.add_parser("sound", help="control audio")
@@ -109,7 +130,7 @@ def build_parser():
     au.add_argument("-v", "--volume", type=int, help="0-9")
     au.add_argument("--off", action="store_true", help="stop audio")
 
-    so = sub.add_parser("soother", help="start/stop the soother")
+    so = sub.add_parser("soother", help="start/stop the soother (light and sound)")
     so.add_argument("--off", action="store_true")
 
     n = sub.add_parser("nap", help="start a nap")
