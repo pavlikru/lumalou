@@ -11,3 +11,6 @@ node_modules/
 packages/js/dist/
 # misc
 .DS_Store
+
+# hardware probe output (logs, baselines, salt)
+probe-out/
