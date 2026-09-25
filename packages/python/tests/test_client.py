@@ -118,7 +118,7 @@ def rig(monkeypatch, synthetic_factory_tokens):
 
     owner = LumalouClient(
         device,
-        expected_factory_item_code="010632",
+        expected_factory_item_code="abc123",
         client_factory=Transport,
         on_response=envelopes.append,
         on_state=states.append,
@@ -317,7 +317,7 @@ async def test_reconnect_reauthenticates_expected_factory_item_before_writes(
     assert rig.client._client is None and not rig.client.connected
     assert rig.client._key is None and rig.client._nonce is None
     assert rig.client._salt is None and not rig.client._cleanup_tasks
-    assert "010632" not in str(error.value) and "999999" not in str(error.value)
+    assert "abc123" not in str(error.value) and "999999" not in str(error.value)
     assert "SYNTHETIC-SERIAL" not in caplog.text
 
 

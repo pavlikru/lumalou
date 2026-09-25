@@ -22,7 +22,7 @@ def synthetic_factory_tokens():
     _, device_key = crypto.generate_keypair()
 
     def signed_token(
-        item_code: str = "010632", *, public_key: bytes = device_key
+        item_code: str = "abc123", *, public_key: bytes = device_key
     ) -> bytes:
         if len(item_code) != 6 or not item_code.isascii():
             raise ValueError("synthetic item code must be six ASCII characters")
