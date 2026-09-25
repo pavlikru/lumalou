@@ -183,3 +183,17 @@ def test_global_state_never_pads_or_truncates(length):
 def test_fe_builder_rejects_unsafe_length_or_type(data):
     with pytest.raises(ValueError):
         P.compose_request(data)
+
+
+def test_bare_application_route_header_is_empty_not_an_error_frame():
+    # Firmware 0.3.7 sends this after ROUTINE_CONTROL_COMMAND 1, 2 and 3.
+    assert P.parse_response_frame(b"\x01\x50") == {
+        "ssi": "0150",
+        "ok": False,
+        "error": "empty",
+    }
+
+
+def test_checksum_failure_reports_the_unauthenticated_opcode():
+    result = P.parse_response_frame(bytes.fromhex("0150fe0218051e"))
+    assert result == {"ssi": "0150", "ok": False, "error": "checksum", "opcode": 0x18}

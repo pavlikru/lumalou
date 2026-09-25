@@ -49,6 +49,22 @@ backend that refuses disconnect cannot be forced to release hardware; explicit
 No command retries or automatic reconnections are added. In particular, an
 ambiguous Play or other transient command is never replayed.
 
+## Inbound frames never end a session (0.3.0)
+
+Like upstream, the receive path ignores every frame it cannot use and logs it
+at debug level with its plaintext: an undecryptable or CRC-failing MPID frame,
+write acknowledgements, the bare `01 50` route header (sent by firmware 0.3.7
+after `ROUTINE_CONTROL_COMMAND` 1, 2 and 3), other routes, non-FE events,
+truncated or checksum-failing FE frames, unknown opcodes, and known typed
+responses whose payload fails validation. None of these retires the session
+or reaches `on_state` / `on_response`, and a malformed frame does not count
+as an observation of its type. Only the pending request can fail, and only
+through its own response: a frame whose opcode is the awaited one and whose
+FE checksum or typed payload is invalid raises `MalformedResponseError`, and
+no valid response before the deadline raises `RequestTimeoutError`. Both
+retire the session, as before. Up to 0.2.1 the client retired the session on
+any such frame, which ended hardware sessions after routine control.
+
 ## Fresh response envelopes
 
 `await client.request(app_data, expected_opcode, timeout=3)` returns an immutable
@@ -80,8 +96,9 @@ Response `13` now decodes to immutable `CurrentDate(hour, minute, second,
 weekday)` through `lumalou.responses.parse_current_date` or envelope `decode()`.
 It requires exactly four BCD bytes, with hour 0–23, minute/second 0–59 and weekday
 0–6 (Sunday first). Invalid BCD, out-of-range values, truncated/extra bytes and
-`FF` sentinels are rejected; a malformed live reply retires the session just as
-other known typed responses do. Model construction also rejects coercion and
+`FF` sentinels are rejected. A malformed reply to a pending `current_date`
+request fails it and retires the session, like other known typed responses; a
+malformed unsolicited one is ignored. Model construction also rejects coercion and
 booleans in integer fields.
 
 Read-only target observations supplied on 2026-09-17 established the reply's
@@ -132,10 +149,16 @@ the explicit `REQUEST_NAP_TIME_ALARM_STATUS` / `NAP_TIME_ALARM_STATUS` and
 prescaler is distinct from unsafe `SET_TIME_PRESCALER` (`52`); the named query
 API cannot produce that write or pairing-complete.
 
-No new typed decoders are added for these replies. The deployed notification
-dispatcher decodes only global state, daily routines, task status, weekly times
-and weekly alarms. Existing setters and fields in GLOBAL_STATE prove their own
-encodings, not the byte length or nibble placement of the standalone responses.
+The deployed notification dispatcher decodes only global state, daily
+routines, task status, weekly times and weekly alarms. Since 0.3.0 the
+single-value replies (`responses.SINGLE_VALUE_RESPONSES`: brightness, colour,
+durations, volumes, song, modes, stage, status flags, transmission mode) decode
+to an `int` and `routine_music_status` (`93`) to `RoutineMusicSettings`, based
+on hardware reads from firmware 0.3.7: every one of them answered with exactly
+one byte (two for `93`, in its SET layout) matching GLOBAL_STATE and the values
+written. `toyic_fw_version` and `time_prescaler` remain raw. `nap_alarm_status`
+and `nap_alarm` were never answered on that firmware
+(`commands.UNANSWERED_REQUESTS`); keep them out of bulk reads.
 The `19` response was freshly read as twelve ordered song IDs, all within the
 device's supported `0..12` playlist range. The `99` response was freshly read as
 two bytes matching the clock's display flag and packed brightness/format. The
@@ -154,8 +177,11 @@ was issued for those observations.
 
 The MPID RX sequence is not proven to echo the outgoing request sequence. It
 is used only to suppress duplicate RX sequence numbers, never as a request ID.
-The client retains up to 4096 sequence numbers in one session, then invalidates
-the session instead of allowing unbounded growth or silently forgetting them.
+The client keeps the last `RX_HISTORY` (1024) sequence numbers; older ones
+raise a floor, and a frame at or below it is dropped as stale. The device's
+sequence increases by one per notification. Up to 0.2.1 the session was
+retired after 4096 notifications, which a push-driven session reaches in a
+few days.
 
 Each expected response opcode may be requested only once per session, and only
 if that opcode has not already been observed in the current session. This includes
@@ -170,14 +196,22 @@ sequence cannot otherwise be distinguished from a response to the first explicit
 query after an unsolicited observation. Different, previously unseen profile
 blocks can be read sequentially within one session.
 
+Firmware 0.3.7 pushes GLOBAL_STATE after every command (often twice) and on
+physical changes, CURRENT_DATE at minute boundaries, ROUTINE_TASK_STATUS on
+routine progress, and the setter's single-value response after a write. These
+pushes are delivered to `on_state` / `on_response` and consume that type's
+eligibility: the refusal is raised before any write and leaves the session
+connected. Treat the pushed envelope as the current value, or read the type
+in a new session when a write needs explicit verification.
+
 If firmware always pushes a required opcode during handshake, that opcode cannot
 be actively queried under this conservative contract. The unsolicited envelope
 remains a current-session observation, not a solicited verification result. Do
 not implement an unbounded reconnect loop or relax the guard to conceal this
 limitation; reliable correlation would require additional protocol evidence.
 
-Timeout, malformed response or cancellation invalidates the entire session and
-waits for cleanup. A late old-session response cannot complete the next request.
+Timeout, a malformed awaited response or cancellation invalidates the entire
+session and waits for cleanup. A late old-session response cannot complete the next request.
 No cached-state fallback remains. Arrival in a current session proves a fresh
 transport observation, not causal acknowledgement of a particular write. An
 unsolicited same-type observation during a request cannot be distinguished by
@@ -190,9 +224,9 @@ write acknowledgement or full-profile verification merely from arrival.
 | --- | --- |
 | `RequestTimeoutError` | Response deadline expired; session invalidated |
 | `DisconnectedError` | No usable session, interrupted connection or failed cleanup |
-| `MalformedResponseError` | Invalid MPID/FE frame or known typed payload |
+| `MalformedResponseError` | The awaited response failed its FE checksum or typed payload validation (`decode()` also raises it for a bad known payload) |
 | `UnsupportedResponseError` | Unsupported request or unavailable typed decoder (an unknown inbound opcode is ignored) |
-| `FreshSessionRequiredError` | Repeated response opcode, sequence exhaustion or bounded receive history exhausted |
+| `FreshSessionRequiredError` | Repeated or already observed response opcode (session stays up), or transmit sequence exhaustion |
 
 Transport backend exceptions are retained for connect/write failures. Cancellation
 still raises `CancelledError` after cleanup, including when cleanup itself fails.
@@ -222,9 +256,10 @@ arbitrary bytes for a later FE marker or accepts trailing/truncated bytes. Valid
 non-FE events on the confirmed `01 50` route
 (such as the existing `01 50 02 ...` golden vector) are ignored as non-application
 events. No fragmentation or reassembly format has been invented; an invalid MPID
-header or body CRC, and a truncated or checksum-failing FE frame on the `01 50`
-route, fail validation and retire the session (the rejected plaintext is logged
-at debug level first).
+header or body CRC, the bare `01 50` header, and a truncated or
+checksum-failing FE frame on the `01 50` route are logged and ignored (see
+"Inbound frames never end a session"). A checksum-failing frame whose opcode
+byte is the awaited one fails that request instead of letting it time out.
 
 GLOBAL_STATE is exactly thirteen bytes (26 nibbles). Short payloads are no longer
 zero-padded and long payloads are no longer truncated. The original 14-byte

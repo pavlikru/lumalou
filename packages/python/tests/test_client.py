@@ -401,7 +401,8 @@ async def test_malformed_global_response_fails_without_state(rig, args):
 
 
 @pytest.mark.parametrize("kind", ["header", "body", "declared", "fe", "truncated"])
-async def test_invalid_frames_invalidate_pending_session(rig, kind):
+async def test_invalid_frames_are_ignored_like_upstream(rig, kind, caplog):
+    """0.3.0: an unusable frame never ends the session or fails a request."""
     transport = await connect(rig)
     task = await waiting_request(rig, transport)
     frame = bytearray(transport.frame(2, bytes(13)))
@@ -416,10 +417,25 @@ async def test_invalid_frames_invalidate_pending_session(rig, kind):
         frame = transport.frame(2, b"", plaintext=bytes.fromhex("0150fe0218051e"))
     else:
         frame = frame[:-1]
-    transport.notify_callback(None, bytearray(frame))
-    with pytest.raises(MalformedResponseError):
+    with caplog.at_level("DEBUG", logger=module.__name__):
+        transport.notify_callback(None, bytearray(frame))
+    assert "Ignoring" in caplog.text
+    assert not task.done() and rig.client.connected
+    assert not rig.states and not rig.envelopes
+    transport.notify(2, bytes(13))
+    assert (await task).opcode == 0x02
+    await rig.client.disconnect()
+
+
+async def test_fe_checksum_failure_of_awaited_opcode_fails_request(rig):
+    transport = await connect(rig)
+    task = await waiting_request(rig, transport)
+    fe = bytearray(P.compose_request(b"\x02" + bytes(13)))
+    fe[-1] ^= 1
+    transport.notify(2, b"", plaintext=b"\x01\x50" + bytes(fe))
+    with pytest.raises(MalformedResponseError, match="checksum"):
         await task
-    assert not rig.client.connected and rig.client._waiter is None
+    assert not rig.client.connected and not rig.states
 
 
 async def test_transport_notification_ignored_while_waiting(rig):
@@ -798,14 +814,31 @@ async def test_explicit_disconnect_reports_cleanup_failure(rig):
     assert not rig.client.connected and not rig.client._cleanup_tasks
 
 
-async def test_bounded_rx_history_requires_fresh_session(rig):
+async def test_long_push_session_is_never_retired_for_rx_history(rig):
+    """0.2.x retired a session after 4096 notifications; pushes never stop."""
     transport = await connect(rig)
-    rig.client._seen_sequences = set(range(4096))
+    count = module.RX_HISTORY * 3
+    for minute in range(count):
+        transport.notify(0x13, bytes((0x12, (minute % 6) << 4, 0, 5)))
+    assert rig.client.connected and len(rig.envelopes) == count
+    assert len(rig.client._seen_sequences) == module.RX_HISTORY
     task = await waiting_request(rig, transport)
-    transport.notify(2, bytes(13), sequence=4096)
-    with pytest.raises(FreshSessionRequiredError):
-        await task
-    assert not rig.client.connected
+    transport.notify(2, bytes(13))
+    assert (await task).opcode == 0x02
+    await rig.client.disconnect()
+
+
+async def test_duplicate_and_stale_rx_sequences_are_dropped(rig):
+    transport = await connect(rig)
+    for sequence in range(1, module.RX_HISTORY + 2):
+        transport.notify(0x13, bytes.fromhex("12000005"), sequence=sequence)
+    delivered = len(rig.envelopes)
+    transport.notify(0x13, bytes.fromhex("12000005"), sequence=1)  # below floor
+    transport.notify(0x13, bytes.fromhex("12000005"), sequence=5)  # in window
+    assert len(rig.envelopes) == delivered and rig.client.connected
+    transport.notify(0x13, bytes.fromhex("12000005"), sequence=module.RX_HISTORY + 9)
+    assert len(rig.envelopes) == delivered + 1
+    await rig.client.disconnect()
 
 
 async def test_tx_sequence_never_wraps_or_reuses_ctr_nonce(rig):
@@ -885,16 +918,105 @@ async def test_write_acknowledgements_of_any_length_keep_session(rig, payload):
     await rig.client.disconnect()
 
 
-async def test_malformed_fe_on_application_route_logs_and_retires(rig, caplog):
+@pytest.mark.parametrize("hexdata", ["0150fe0218051e", "0150", "0150fe", "0150fe00"])
+async def test_malformed_application_route_frame_is_logged_and_ignored(
+    rig, caplog, hexdata
+):
     transport = await connect(rig)
     task = await waiting_request(rig, transport)
-    plaintext = bytes.fromhex("0150fe0218051e")
+    plaintext = bytes.fromhex(hexdata)
     with caplog.at_level("DEBUG", logger=module.__name__):
         transport.notify(2, b"", plaintext=plaintext)
-    with pytest.raises(MalformedResponseError, match="application route"):
-        await task
-    assert not rig.client.connected
+    assert not task.done() and rig.client.connected
     assert plaintext.hex(" ") in caplog.text
+    transport.notify(2, bytes(13))
+    assert (await task).opcode == 0x02
+    await rig.client.disconnect()
+
+
+@pytest.mark.parametrize("control", [1, 2, 3])
+async def test_bare_route_frame_after_routine_control_keeps_session(rig, control):
+    """Hardware regression (0.2.1): ``01 50`` after 6B 01/02/03 ended the session."""
+    transport = await connect(rig)
+    payload = C.routine_control(control)
+    plaintext = P.encode_command(payload)
+
+    async def device(_frame):
+        transport.notify(
+            0, b"", plaintext=bytes([0, 0x7F, 1, len(plaintext)]) + bytes(5)
+        )
+        transport.notify(0, b"", plaintext=bytes([1, 0x10, len(plaintext) - 2, 0]))
+        transport.notify(0, b"", plaintext=b"\x01\x50")
+        transport.notify(0x94, bytes(7))
+        transport.notify(2, bytes(13))
+
+    transport.on_write = device
+    await rig.client.send(payload)
+    assert rig.client.connected and rig.client.last_error is None
+    assert [envelope.opcode for envelope in rig.envelopes] == [0x94, 0x02]
+    assert len(rig.states) == 1
+    transport.on_write = None
+    task = await waiting_request(
+        rig, transport, opcode=0x13, payload=C.request("current_date")
+    )
+    transport.notify(0x13, bytes.fromhex("14000005"))
+    assert (await task).decode().hour == 14
+    await rig.client.disconnect()
+
+
+@pytest.mark.parametrize(
+    ("opcode", "args", "name"),
+    [
+        (0x02, bytes(12), "global_state"),
+        (0x13, bytes.fromhex("24000000"), "current_date"),
+        (0x18, b"\x01\x02", "light_color"),
+        (0x94, bytes(6), "routine_task_status"),
+    ],
+)
+async def test_unsolicited_malformed_typed_push_is_ignored(rig, opcode, args, name):
+    transport = await connect(rig)
+    transport.notify(opcode, args)
+    assert rig.client.connected and not rig.envelopes and not rig.states
+    # Not an observation: the type can still be requested in this session.
+    valid = {0x02: bytes(13), 0x13: bytes(4), 0x18: b"\x01", 0x94: bytes(7)}[opcode]
+
+    async def reply(_payload):
+        transport.notify(opcode, valid)
+
+    transport.on_write = reply
+    assert (await rig.client.request_named(name)).args == valid
+    await rig.client.disconnect()
+
+
+async def test_pushes_after_a_command_reach_callbacks_and_keep_session(rig):
+    """The device pushes GLOBAL_STATE (often twice) and the setter's response."""
+    transport = await connect(rig)
+
+    async def device(_frame):
+        transport.notify(2, bytes.fromhex("01000551530400001201114500"))
+        transport.notify(0x18, b"\x03")
+        transport.notify(2, bytes.fromhex("01000551530400001201114500"))
+
+    transport.on_write = device
+    await rig.client.send(C.set_light_color(3))
+    assert [envelope.opcode for envelope in rig.envelopes] == [0x02, 0x18, 0x02]
+    assert rig.envelopes[1].decode() == 3
+    assert [state["lightColor"] for state in rig.states] == [3, 3]
+    assert rig.client.state["lightStatus"] == 1
+    # A pushed type cannot be re-read in this session; the refusal writes
+    # nothing and leaves the session up. A new session can verify it.
+    writes = len(transport.writes)
+    with pytest.raises(FreshSessionRequiredError):
+        await rig.client.request_named("light_color")
+    assert len(transport.writes) == writes and rig.client.connected
+    replacement = await connect(rig)
+
+    async def reply(_payload):
+        replacement.notify(0x18, b"\x03")
+
+    replacement.on_write = reply
+    assert (await rig.client.request_named("light_color")).decode() == 3
+    await rig.client.disconnect()
 
 
 @pytest.mark.parametrize(
@@ -982,6 +1104,7 @@ async def test_unsolicited_between_request_guard_and_exchange_cannot_satisfy_it(
             await rig.client.request_state()
         assert injected and len(transport.writes) == writes
         assert rig.client._waiter is None
+        assert rig.client.connected  # Nothing was written: no reconnect forced.
     finally:
         await rig.client.disconnect()
 

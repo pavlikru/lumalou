@@ -90,9 +90,12 @@ def parse_response_frame(plaintext: bytes) -> dict:
 
     Valid MPID payloads can carry non-FE transport notifications. Write
     acknowledgements (``00 7f 01 NN 00 00 00 00 00`` and ``01 10 NN 00``, see
-    ``is_transport_ack``) and the established ``01 50 02 ...`` event are not
-    application responses and must not invalidate the session. Only the
-    ``01 50`` route carries application responses.
+    ``is_transport_ack``), the established ``01 50 02 ...`` event and the bare
+    ``01 50`` route header (error ``"empty"``; firmware 0.3.7 sends it after
+    ``ROUTINE_CONTROL_COMMAND`` 1, 2 and 3) are not application responses.
+    Only the ``01 50`` route carries application responses. A ``"checksum"``
+    error also reports the (unauthenticated) ``opcode`` byte so a caller can
+    fail a request whose response arrived corrupted instead of waiting.
     """
     if not isinstance(plaintext, bytes) or len(plaintext) < 2:
         return {"ssi": None, "ok": False, "error": "length"}
@@ -102,16 +105,17 @@ def parse_response_frame(plaintext: bytes) -> dict:
     if plaintext[:2] != SSI0_RX_HEADER:
         return {"ssi": ssi, "ok": False, "error": "unsupported_route"}
     d = plaintext[2:]
-    if not d or d[0] != 0xFE:
-        error = "unsupported_transport" if ssi is not None and d else "length"
-        return {"ssi": ssi, "ok": False, "error": error}
+    if not d:
+        return {"ssi": ssi, "ok": False, "error": "empty"}
+    if d[0] != 0xFE:
+        return {"ssi": ssi, "ok": False, "error": "unsupported_transport"}
     if len(d) < 4 or d[1] == 0 or len(d) != d[1] + 3:
         return {"ssi": ssi, "ok": False, "error": "length"}
     checksum = 0
     for byte in d[1:]:
         checksum ^= byte
     if checksum:
-        return {"ssi": ssi, "ok": False, "error": "checksum"}
+        return {"ssi": ssi, "ok": False, "error": "checksum", "opcode": d[2]}
     return {"ssi": ssi, "ok": True, "opcode": d[2], "args": bytes(d[3:-1])}
 
 

@@ -6,6 +6,7 @@ import asyncio
 import datetime
 import logging
 import time
+from collections import deque
 from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass
@@ -32,6 +33,10 @@ SESSION = GATT["characteristics"]["session"]
 
 WRITE_SPACING = 0.15  # seconds between writes (the device is sensitive to bursts)
 DISCONNECT_TIMEOUT = 5.0
+# Receive sequence numbers kept for duplicate suppression. Older numbers move
+# into a floor below which frames are dropped as stale, so a long-lived,
+# push-driven session never has to be retired for its history size.
+RX_HISTORY = 1024
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -188,6 +193,8 @@ class LumalouClient:
         self._requested_opcodes: set[int] = set()
         self._observed_opcodes: set[int] = set()
         self._seen_sequences: set[int] = set()
+        self._sequence_order: deque[int] = deque()
+        self._sequence_floor = -1
         self._cleanup_tasks: set[asyncio.Task] = set()
         self.last_error: LumalouError | None = None
 
@@ -243,6 +250,8 @@ class LumalouClient:
         self._requested_opcodes.clear()
         self._observed_opcodes.clear()
         self._seen_sequences.clear()
+        self._sequence_order.clear()
+        self._sequence_floor = -1
         waiter, self._waiter = self._waiter, None
         self._expected_opcode = None
         if waiter is not None and not waiter.done():
@@ -412,14 +421,34 @@ class LumalouClient:
                 await self._abort(failure)
                 raise
 
-    @staticmethod
-    def _log_rejected(plaintext: bytes, error: Exception) -> None:
-        # Decrypted frames carry device state and commands, never key material
-        # or the factory token; debug level keeps them out of normal logs.
-        if plaintext:
-            _LOGGER.debug("Rejecting Lumalou frame (%s): %s", error, plaintext.hex(" "))
+    def _remember_sequence(self, sequence: int) -> bool:
+        """Return False for a duplicate or stale RX sequence number."""
+        if sequence in self._seen_sequences or sequence <= self._sequence_floor:
+            return False
+        self._seen_sequences.add(sequence)
+        self._sequence_order.append(sequence)
+        if len(self._sequence_order) > RX_HISTORY:
+            oldest = self._sequence_order.popleft()
+            self._seen_sequences.discard(oldest)
+            self._sequence_floor = max(self._sequence_floor, oldest)
+        return True
+
+    def _fail_waiter(self, opcode: int, error: LumalouError) -> None:
+        """Fail the pending request only if it awaits this response opcode."""
+        waiter = self._waiter
+        if waiter is not None and not waiter.done() and opcode == self._expected_opcode:
+            waiter.set_exception(error)
 
     def _on_rx(self, generation: int, _sender, data: bytearray):
+        """Handle one notification; never retires the session by itself.
+
+        Like upstream, anything this client cannot use (undecryptable or
+        CRC-failing MPID frames, write acknowledgements, the bare ``01 50``
+        route header, other routes, unknown opcodes, malformed payloads) is
+        logged at debug level and ignored. Only the pending request can fail,
+        and only through its own response: a frame whose (FE-checksum-failing
+        or typed-payload-failing) opcode is the awaited one, or a timeout.
+        """
         if (
             generation != self._generation
             or not self._session_active
@@ -427,68 +456,71 @@ class LumalouClient:
         ):
             return
         frame = bytes(data)
-        plaintext = b""
-        try:
-            res = P.decrypt_rx_frame(frame, self._key, self._nonce, self._salt)
-            if not res or not res["crc_ok"]:
-                _LOGGER.debug(
-                    "Rejecting Lumalou frame with invalid MPID length or CRC: %s",
-                    frame.hex(" "),
-                )
-                raise MalformedResponseError("invalid MPID length or CRC")
-            sequence = res["seq"]
-            if sequence in self._seen_sequences:
-                return
-            if len(self._seen_sequences) >= 4096:
-                raise FreshSessionRequiredError(
-                    "receive sequence history limit reached"
-                )
-            self._seen_sequences.add(sequence)
-            plaintext = res["plaintext"]
-            response = P.parse_response_frame(plaintext)
-            if not response["ok"]:
-                if not plaintext.startswith(P.SSI0_RX_HEADER) or (
-                    response["error"] == "unsupported_transport"
-                ):
-                    # Acknowledgements, events and other routes can never be
-                    # an application response: a request still needs a valid
-                    # FE frame on 01 50, or it times out. Do not retire the
-                    # session for data this client does not interpret.
-                    _LOGGER.debug(
-                        "Ignoring Lumalou notification seq=%d (%s): %s",
-                        sequence,
-                        response["error"],
-                        plaintext.hex(" "),
-                    )
-                    return
-                raise MalformedResponseError(
-                    "invalid FE length or checksum on the application route"
-                )
-            if response["opcode"] not in RESPONSES:
-                # Valid FE framing but an opcode no request can ask for.
-                _LOGGER.debug(
-                    "Ignoring unknown Lumalou response opcode 0x%02x seq=%d: %s",
+        res = P.decrypt_rx_frame(frame, self._key, self._nonce, self._salt)
+        if not res or not res["crc_ok"]:
+            _LOGGER.debug(
+                "Ignoring Lumalou frame with invalid MPID length or CRC: %s",
+                frame.hex(" "),
+            )
+            return
+        sequence = res["seq"]
+        if not self._remember_sequence(sequence):
+            _LOGGER.debug("Ignoring duplicate or stale Lumalou seq=%d", sequence)
+            return
+        # Decrypted frames carry device state and commands, never key material
+        # or the factory token; debug level keeps them out of normal logs.
+        plaintext = res["plaintext"]
+        response = P.parse_response_frame(plaintext)
+        if not response["ok"]:
+            _LOGGER.debug(
+                "Ignoring Lumalou notification seq=%d (%s): %s",
+                sequence,
+                response["error"],
+                plaintext.hex(" "),
+            )
+            if response["error"] == "checksum":
+                self._fail_waiter(
                     response["opcode"],
+                    MalformedResponseError(
+                        "invalid FE checksum on the awaited response"
+                    ),
+                )
+            return
+        if response["opcode"] not in RESPONSES:
+            # Valid FE framing but an opcode no request can ask for.
+            _LOGGER.debug(
+                "Ignoring unknown Lumalou response opcode 0x%02x seq=%d: %s",
+                response["opcode"],
+                sequence,
+                plaintext.hex(" "),
+            )
+            return
+        envelope = ResponseEnvelope(
+            response["opcode"],
+            response["args"],
+            generation,
+            time.monotonic(),
+            sequence,
+        )
+        decoded = None
+        if envelope.opcode in _TYPED_RESPONSES:
+            try:
+                decoded = envelope.decode()
+            except (LumalouError, TypeError, ValueError) as error:
+                _LOGGER.debug(
+                    "Ignoring malformed Lumalou response 0x%02x seq=%d (%s): %s",
+                    envelope.opcode,
                     sequence,
+                    error,
                     plaintext.hex(" "),
                 )
+                self._fail_waiter(
+                    envelope.opcode,
+                    error
+                    if isinstance(error, LumalouError)
+                    else MalformedResponseError(str(error)),
+                )
                 return
-            envelope = ResponseEnvelope(
-                response["opcode"],
-                response["args"],
-                generation,
-                time.monotonic(),
-                sequence,
-            )
-            decoded = envelope.decode() if envelope.opcode in _TYPED_RESPONSES else None
-        except LumalouError as error:
-            self._log_rejected(plaintext, error)
-            self._invalidate(error)
-            return
-        except (TypeError, ValueError) as error:
-            self._log_rejected(plaintext, error)
-            self._invalidate(MalformedResponseError(str(error)))
-            return
         # Record all validated observations, not only requested responses.
         # A later same-type notification with a new RX sequence could be its
         # delayed duplicate. Retain this before invoking external callbacks.
@@ -517,6 +549,18 @@ class LumalouClient:
         Any previously requested OR observed opcode requires a clean reconnect:
         a delayed duplicate with a new RX sequence is indistinguishable, even
         if the first observation was unsolicited or answered another request.
+
+        The device pushes GLOBAL_STATE after every command and on physical
+        changes, CURRENT_DATE at minute boundaries, ROUTINE_TASK_STATUS on
+        routine progress and the matching single-value response after a
+        setter. Those pushes reach ``on_state``/``on_response`` and make that
+        type ineligible here for the rest of the session: this raises
+        ``FreshSessionRequiredError`` before writing anything and leaves the
+        session connected. Use the pushed envelope, or read it (for example
+        to verify a profile write) in a new session.
+
+        A timeout, a cancelled request or a malformed awaited response retires
+        the session.
         """
         plaintext = P.encode_command(app_data)
         if type(expected_opcode) is not int or expected_opcode not in RESPONSES:
@@ -533,13 +577,16 @@ class LumalouClient:
                 )
             self._requested_opcodes.add(expected_opcode)
             future = asyncio.get_running_loop().create_future()
+            refused_before_write = False
 
             async def exchange():
+                nonlocal refused_before_write
                 # wait_for schedules this coroutine. Unsolicited data can arrive
                 # after the outer guard but before exchange starts. Never make
                 # its future eligible for those pre-write notifications.
                 self._require_session(generation)
                 if expected_opcode in self._observed_opcodes:
+                    refused_before_write = True
                     raise FreshSessionRequiredError(
                         "response type observed before query write; reconnect required"
                     )
@@ -558,6 +605,8 @@ class LumalouClient:
                 await self._abort(failure)
                 raise failure from error
             except BaseException as error:
+                if refused_before_write:
+                    raise  # Nothing was written; the session stays usable.
                 failure = (
                     error
                     if isinstance(error, LumalouError)
