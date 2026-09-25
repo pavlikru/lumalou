@@ -1,9 +1,19 @@
 # lumalou (Python)
 
+> **Fork notice.** `lumalou-gld09` is an independent fork of
+> [stramanu/lumalou](https://github.com/stramanu/lumalou) by Emanuele Strazzullo,
+> maintained at [pavlikru/lumalou](https://github.com/pavlikru/lumalou). It
+> ships the changes proposed in
+> [stramanu/lumalou#2](https://github.com/stramanu/lumalou/pull/2) (strict
+> profile reads, typed schedule codecs and setters, authenticated device-key
+> binding, injectable BLE client factory) until they are released upstream.
+> The import package is still `lumalou`; do not install it alongside the
+> upstream `lumalou` distribution. MIT licensed, original attribution preserved.
+
 Local BLE control for the Fisher-Price Lumalou. Pure Python (async, [bleak](https://github.com/hbldh/bleak)).
 
 ```bash
-pip install lumalou
+pip install lumalou-gld09
 ```
 
 ## Library

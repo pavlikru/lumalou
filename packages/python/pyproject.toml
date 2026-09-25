@@ -3,13 +3,14 @@ requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "lumalou"
-version = "0.1.0"
-description = "Local BLE control for the Fisher-Price Lumalou — reverse-engineered MPID protocol, pure Python"
+name = "lumalou-gld09"
+version = "0.2.0"
+description = "Fork of stramanu/lumalou: local BLE control for the Fisher-Price Lumalou (gld09), with strict reads and device-key binding (imports as lumalou)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Emanuele Strazzullo" }]
+maintainers = [{ name = "Pavel Maltsev" }]
 keywords = ["fisher-price", "lumalou", "ble", "bluetooth", "bleak", "reverse-engineering", "gld09"]
 classifiers = [
   "Development Status :: 4 - Beta",
@@ -25,8 +26,10 @@ dependencies = ["bleak>=0.22", "cryptography>=41"]
 dev = ["pytest>=8", "pytest-asyncio>=0.23"]
 
 [project.urls]
-Homepage = "https://github.com/stramanu/lumalou"
-Issues = "https://github.com/stramanu/lumalou/issues"
+Homepage = "https://github.com/pavlikru/lumalou"
+Source = "https://github.com/pavlikru/lumalou"
+Changelog = "https://github.com/pavlikru/lumalou/blob/v0.2.0/packages/python/CHANGELOG.md"
+Upstream = "https://github.com/stramanu/lumalou"
 
 [project.scripts]
 lumalou = "lumalou.cli:main"

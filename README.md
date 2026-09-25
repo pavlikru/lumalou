@@ -1,5 +1,12 @@
 # lumalou
 
+> **Fork notice.** This is [pavlikru/lumalou](https://github.com/pavlikru/lumalou),
+> a fork of [stramanu/lumalou](https://github.com/stramanu/lumalou). The Python
+> package from this fork is published on PyPI as `lumalou-gld09` (import name
+> `lumalou`) and carries the changes proposed in
+> [stramanu/lumalou#2](https://github.com/stramanu/lumalou/pull/2). Badges and
+> links below refer to the upstream project.
+
 [![CI](https://github.com/stramanu/lumalou/actions/workflows/ci.yml/badge.svg)](https://github.com/stramanu/lumalou/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/lumalou?label=pypi&cacheSeconds=3600)](https://pypi.org/project/lumalou/)
 [![npm](https://img.shields.io/npm/v/lumalou?label=npm)](https://www.npmjs.com/package/lumalou)
