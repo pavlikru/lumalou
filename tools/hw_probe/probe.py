@@ -1194,8 +1194,8 @@ BASELINE_READS: tuple[str, ...] = (
     "r2r_status",
     "r2r_alarm_status",
     "routine_mode_status",
-    "nap_alarm_status",
-    "nap_alarm",
+    # nap_alarm_status / nap_alarm are omitted: firmware 0.3.7 never answers
+    # them (C.UNANSWERED_REQUESTS) and each timeout costs a reconnect.
 )
 
 
@@ -1399,7 +1399,14 @@ async def cmd_scan(args, log: EventLog) -> int:
 
 async def cmd_read_all(args, log: EventLog, probe: Probe) -> int:
     records = []
-    for name in (*READ_NAMES, *DAY_READS):
+    names = READ_NAMES
+    if not args.include_unanswered:
+        # Firmware 0.3.7 never answers these; each timeout costs a reconnect.
+        names = tuple(n for n in READ_NAMES if n not in C.UNANSWERED_REQUESTS)
+        log.say(
+            f"  skipping {', '.join(sorted(C.UNANSWERED_REQUESTS))} (never answered)"
+        )
+    for name in (*names, *DAY_READS):
         record = await probe.read(name)
         records.append(record)
         log.say(f"  {name}: {record['status']}")
@@ -1756,10 +1763,15 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser(
         "scan", parents=[common], help="list matching advertisements (no connect)"
     )
-    sub.add_parser(
+    read_all = sub.add_parser(
         "read-all",
         parents=[common],
         help="read every named response and all 7 day routines",
+    )
+    read_all.add_argument(
+        "--include-unanswered",
+        action="store_true",
+        help="also request nap_alarm_status and nap_alarm (time out on 0.3.7)",
     )
     watch = sub.add_parser(
         "watch", parents=[common], help="log all notifications for N seconds"

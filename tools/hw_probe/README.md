@@ -30,11 +30,30 @@ published package, and nothing runs it automatically.
 
 ## macOS setup
 
-- Run the tool from Terminal.app or iTerm2. The first run triggers a macOS
-  Bluetooth permission prompt for that terminal app. Allow it, or grant access
-  later under System Settings → Privacy & Security → Bluetooth.
-- Home Assistant must not be connected at the same time. Disable the Lumalou
-  config entry in HA before you start, and re-enable it when you finish.
+- macOS only grants Bluetooth to a process whose app bundle declares
+  `NSBluetoothAlwaysUsageDescription`. A terminal app that has been allowed
+  under System Settings → Privacy & Security → Bluetooth usually passes its
+  permission on to the Python it starts. When it does not (for example when
+  the terminal is embedded in another tool, or CoreBluetooth aborts or scans
+  find nothing), launch Python from a tiny wrapper app instead:
+
+  ```text
+  LumalouProbe.app/Contents/Info.plist   CFBundleIdentifier, CFBundleExecutable=run,
+                                         CFBundlePackageType=APPL, LSUIElement=true,
+                                         NSBluetoothAlwaysUsageDescription=<reason>
+  LumalouProbe.app/Contents/MacOS/run    #!/bin/zsh script that cd's to the repo and
+                                         runs tools/hw_probe/.venv/bin/python
+                                         tools/hw_probe/probe.py <args> > <log> 2>&1
+  ```
+
+  Ad-hoc sign it (`codesign --force --sign - LumalouProbe.app`), start it with
+  `open LumalouProbe.app` (arguments can be passed through a file the script
+  reads), allow the Bluetooth prompt once, and read the log it writes. Output
+  goes to the log because `open` does not attach a terminal.
+- Only one BLE central can be connected. Home Assistant, the Fisher-Price app
+  or a browser Web Bluetooth tab block the probe completely. Disable the
+  Lumalou config entry in HA before you start, and re-enable it when you
+  finish.
 
 ## Usage
 
@@ -47,6 +66,8 @@ P="uv run --project tools/hw_probe python tools/hw_probe/probe.py"
 
 $P scan                                   # matching advertisements, no connect
 $P read-all                               # every named read + 7 day routines
+                                          # (--include-unanswered adds the nap
+                                          # alarm reads that 0.3.7 never answers)
 $P watch --seconds 120                    # log notifications while pressing buttons
 $P send --help                            # list the write allowlist
 $P send light-brightness 2 --dry-run      # show the payload, no Bluetooth
@@ -80,8 +101,9 @@ rejected frames with hex).
   write session. It uses only the normal library API.
 - `baseline restore` rebuilds every write from the saved raw bytes with the
   library's strict decoders. It covers the playlist, clock settings, r2r and
-  sleepy times, r2r alarms and the seven day routines. Scalar settings have no
-  established standalone response layout. With `--include-inferred`, the tool
+  sleepy times, r2r alarms and the seven day routines. Scalar settings are
+  restored from GLOBAL_STATE, which carries the same values as their
+  standalone single-byte responses. With `--include-inferred`, the tool
   rebuilds them from the saved GLOBAL_STATE fields: playlist and light
   duration, routine volume, routine music/rewards, r2r and routine status. The
   nap alarm and the alarm statuses are not restored. After restoring, the tool

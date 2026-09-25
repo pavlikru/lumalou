@@ -236,10 +236,13 @@ def test_read_all_records_timeout_and_reconnects(tmp_path, fake, capsys):
     by_name = {r["name"]: r for r in records if r["status"] != "fresh-session-required"}
     assert by_name["light_color"]["status"] == "ok"
     assert by_name["r2r_times"]["decoded"]["days"][0] == "07:00"
-    assert by_name["led_brightness"]["undecodable"].startswith(
+    assert by_name["led_brightness"]["decoded"] == 1  # typed since 0.3.0
+    assert by_name["toyic_fw_version"]["undecodable"].startswith(
         "UnsupportedResponseError"
     )
-    assert len(by_name) == len(probe.READ_NAMES) + 7
+    # Requests firmware 0.3.7 never answers are skipped by default.
+    assert not set(by_name) & probe.C.UNANSWERED_REQUESTS
+    assert len(by_name) == len(probe.READ_NAMES) - 2 + 7
     # Reconnected after the timeout and the fresh-session refusal, pinned to identity.
     assert len(fake.instances) == 3
     assert all(c.expected == FINGERPRINT for c in fake.instances[1:])
@@ -247,6 +250,16 @@ def test_read_all_records_timeout_and_reconnects(tmp_path, fake, capsys):
     assert (
         FINGERPRINT not in text and ADDRESS not in text and ADDRESS.lower() not in text
     )
+
+
+def test_read_all_can_include_unanswered_requests(tmp_path, fake, capsys):
+    assert run_cli(tmp_path, "read-all", "--include-unanswered") == 0
+    names = {
+        json.loads(line)["name"]
+        for line in log_text(tmp_path).splitlines()
+        if '"kind": "read"' in line
+    }
+    assert names >= probe.C.UNANSWERED_REQUESTS
 
 
 def test_send_writes_once_and_diffs(tmp_path, fake, capsys):
