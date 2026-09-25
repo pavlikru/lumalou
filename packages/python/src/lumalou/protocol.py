@@ -54,26 +54,50 @@ def encode_command(app_data: bytes) -> bytes:
     return ssi0_wrap(compose_request(app_data))
 
 
+# Write acknowledgements. Every target-observed value matches the length of a
+# frame this client wrote: ``00 7f 01 NN`` + five zero bytes carries the MPID
+# plaintext length (03 = ENABLE_RX, 06 = one-byte query, 07 = two-byte setter,
+# 12 = 13-byte playlist) and ``01 10 NN 00`` echoes the SSI0 transmit header
+# with the FE-frame length (04, 05, 10 for the same commands).
+_MPID_ACK_PREFIX = b"\x00\x7f\x01"
+_MPID_ACK_SUFFIX = bytes(5)
+_MPID_ACK_MIN_LENGTH = len(b"\x01\x50\x01")  # ENABLE_RX, the shortest write
+_SSI0_ACK_PREFIX = bytes([SSI0_ID, (SPI_WRITE << 4) & 0xF0])
+_SSI0_ACK_MIN_LENGTH = 4  # FE | len | opcode | checksum
+
+
+def is_transport_ack(plaintext: bytes) -> bool:
+    """Return True for a write acknowledgement, never an application response."""
+    if not isinstance(plaintext, bytes):
+        return False
+    if len(plaintext) == 9:
+        return (
+            plaintext[:3] == _MPID_ACK_PREFIX
+            and plaintext[3] >= _MPID_ACK_MIN_LENGTH
+            and plaintext[4:] == _MPID_ACK_SUFFIX
+        )
+    if len(plaintext) == 4:
+        return (
+            plaintext[:2] == _SSI0_ACK_PREFIX
+            and plaintext[2] >= _SSI0_ACK_MIN_LENGTH
+            and plaintext[3] == 0
+        )
+    return False
+
+
 def parse_response_frame(plaintext: bytes) -> dict:
     """Validate one FE response; no scanning, zero padding or reassembly.
 
-    Valid MPID payloads can carry non-FE transport notifications. The observed
-    00 7f 01 03/06/07/12 00 00 00 00 and 01 10 04/05/10 00 acknowledgements, plus the
-    established 01 50 02 ... event, are not application responses and must not
-    invalidate the session.
+    Valid MPID payloads can carry non-FE transport notifications. Write
+    acknowledgements (``00 7f 01 NN 00 00 00 00 00`` and ``01 10 NN 00``, see
+    ``is_transport_ack``) and the established ``01 50 02 ...`` event are not
+    application responses and must not invalidate the session. Only the
+    ``01 50`` route carries application responses.
     """
     if not isinstance(plaintext, bytes) or len(plaintext) < 2:
         return {"ssi": None, "ok": False, "error": "length"}
     ssi = plaintext[:2].hex()
-    if plaintext in {
-        bytes.fromhex("00 7f 01 03 00 00 00 00 00"),
-        bytes.fromhex("00 7f 01 06 00 00 00 00 00"),
-        bytes.fromhex("00 7f 01 07 00 00 00 00 00"),
-        bytes.fromhex("00 7f 01 12 00 00 00 00 00"),
-        bytes.fromhex("01 10 04 00"),
-        bytes.fromhex("01 10 05 00"),
-        bytes.fromhex("01 10 10 00"),
-    }:
+    if is_transport_ack(plaintext):
         return {"ssi": ssi, "ok": False, "error": "unsupported_transport"}
     if plaintext[:2] != SSI0_RX_HEADER:
         return {"ssi": ssi, "ok": False, "error": "unsupported_route"}

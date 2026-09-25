@@ -108,6 +108,45 @@ def test_live_transport_acks_on_007f_route_are_ignored_not_fatal(ack):
         assert result["error"] == "unsupported_route"
 
 
+@pytest.mark.parametrize(
+    "app_data",
+    [
+        bytes([0x53]),  # one-byte query: observed 00 7f 01 06 / 01 10 04 00
+        bytes([0x37, 3]),  # two-byte setter: observed 07 / 05
+        bytes([0x30, 0x12, 0x35, 0x22, 0x05]),  # SET_CURRENT_DATE: 0a / 08
+        bytes([0x40]) + bytes(12),  # playlist: observed 12 / 10
+        bytes([0x5A]) + bytes(40),  # longer multi-field setter
+    ],
+    ids=["query", "setter", "current-date", "playlist", "routine"],
+)
+def test_write_acks_carry_the_written_lengths(app_data):
+    plaintext = P.encode_command(app_data)
+    mpid_ack = bytes([0x00, 0x7F, 0x01, len(plaintext)]) + bytes(5)
+    ssi_ack = plaintext[:2] + bytes([len(plaintext) - 2, 0x00])
+    for ack in (mpid_ack, ssi_ack):
+        assert P.is_transport_ack(ack)
+        assert P.parse_response_frame(ack)["error"] == "unsupported_transport"
+
+
+@pytest.mark.parametrize(
+    "frame",
+    [
+        "00 7f 01 02 00 00 00 00 00",  # shorter than any write
+        "00 7f 01 0a 00 00 00 00 01",
+        "00 7f 02 0a 00 00 00 00 00",
+        "00 7f 01 0a 00 00 00 00",
+        "00 7f 01 0a 00 00 00 00 00 00",
+        "01 10 03 00",  # shorter than any FE frame
+        "01 10 08 01",
+        "01 50 08 00",
+        "01 11 08 00",
+        "01 10 08 00 00",
+    ],
+)
+def test_near_miss_acks_are_not_transport_acks(frame):
+    assert not P.is_transport_ack(bytes.fromhex(frame))
+
+
 def test_no_search_for_fe_inside_unrecognized_transport_payload():
     assert not P.parse_response_frame(bytes.fromhex("015000fe0218051f"))["ok"]
 

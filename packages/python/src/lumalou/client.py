@@ -406,6 +406,13 @@ class LumalouClient:
                 await self._abort(failure)
                 raise
 
+    @staticmethod
+    def _log_rejected(plaintext: bytes, error: Exception) -> None:
+        # Decrypted frames carry device state and commands, never key material
+        # or the factory token; debug level keeps them out of normal logs.
+        if plaintext:
+            _LOGGER.debug("Rejecting Lumalou frame (%s): %s", error, plaintext.hex(" "))
+
     def _on_rx(self, generation: int, _sender, data: bytearray):
         if (
             generation != self._generation
@@ -413,9 +420,15 @@ class LumalouClient:
             or self._key is None
         ):
             return
+        frame = bytes(data)
+        plaintext = b""
         try:
-            res = P.decrypt_rx_frame(bytes(data), self._key, self._nonce, self._salt)
+            res = P.decrypt_rx_frame(frame, self._key, self._nonce, self._salt)
             if not res or not res["crc_ok"]:
+                _LOGGER.debug(
+                    "Rejecting Lumalou frame with invalid MPID length or CRC: %s",
+                    frame.hex(" "),
+                )
                 raise MalformedResponseError("invalid MPID length or CRC")
             sequence = res["seq"]
             if sequence in self._seen_sequences:
@@ -425,15 +438,35 @@ class LumalouClient:
                     "receive sequence history limit reached"
                 )
             self._seen_sequences.add(sequence)
-            response = P.parse_response_frame(res["plaintext"])
+            plaintext = res["plaintext"]
+            response = P.parse_response_frame(plaintext)
             if not response["ok"]:
-                if response["error"] == "unsupported_transport":
+                if not plaintext.startswith(P.SSI0_RX_HEADER) or (
+                    response["error"] == "unsupported_transport"
+                ):
+                    # Acknowledgements, events and other routes can never be
+                    # an application response: a request still needs a valid
+                    # FE frame on 01 50, or it times out. Do not retire the
+                    # session for data this client does not interpret.
+                    _LOGGER.debug(
+                        "Ignoring Lumalou notification seq=%d (%s): %s",
+                        sequence,
+                        response["error"],
+                        plaintext.hex(" "),
+                    )
                     return
                 raise MalformedResponseError(
-                    "unsupported SSI route or invalid FE length/checksum"
+                    "invalid FE length or checksum on the application route"
                 )
             if response["opcode"] not in RESPONSES:
-                raise UnsupportedResponseError("unknown application response opcode")
+                # Valid FE framing but an opcode no request can ask for.
+                _LOGGER.debug(
+                    "Ignoring unknown Lumalou response opcode 0x%02x seq=%d: %s",
+                    response["opcode"],
+                    sequence,
+                    plaintext.hex(" "),
+                )
+                return
             envelope = ResponseEnvelope(
                 response["opcode"],
                 response["args"],
@@ -443,9 +476,11 @@ class LumalouClient:
             )
             decoded = envelope.decode() if envelope.opcode in _TYPED_RESPONSES else None
         except LumalouError as error:
+            self._log_rejected(plaintext, error)
             self._invalidate(error)
             return
         except (TypeError, ValueError) as error:
+            self._log_rejected(plaintext, error)
             self._invalidate(MalformedResponseError(str(error)))
             return
         # Record all validated observations, not only requested responses.

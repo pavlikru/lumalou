@@ -432,13 +432,17 @@ async def test_transport_notification_ignored_while_waiting(rig):
     await rig.client.disconnect()
 
 
-async def test_unknown_opcode_is_explicit_unsupported_error(rig):
+async def test_unknown_opcode_is_ignored_and_cannot_satisfy_request(rig, caplog):
     transport = await connect(rig)
     task = await waiting_request(rig, transport)
-    transport.notify(0xEE, b"\x00")
-    with pytest.raises(UnsupportedResponseError):
-        await task
-    assert not rig.client.connected
+    with caplog.at_level("DEBUG", logger=module.__name__):
+        transport.notify(0xEE, b"\x00")
+    assert not task.done() and rig.client.connected
+    assert not rig.envelopes and 0xEE not in rig.client._observed_opcodes
+    assert "unknown Lumalou response opcode 0xee" in caplog.text
+    transport.notify(2, bytes(13))
+    assert (await task).opcode == 0x02
+    await rig.client.disconnect()
 
 
 @pytest.mark.parametrize(
@@ -820,14 +824,73 @@ async def test_malformed_typed_weekly_payload_retires_session(rig):
 
 
 @pytest.mark.parametrize("prefix", [b"", b"\x01\x10", b"\x01\xff", b"\x02\x50"])
-async def test_invalid_route_never_completes_request_or_publishes_state(rig, prefix):
+async def test_invalid_route_never_completes_request_or_publishes_state(
+    rig, prefix, caplog
+):
     transport = await connect(rig)
     task = await waiting_request(rig, transport)
     plaintext = prefix + P.compose_request(b"\x02" + bytes(13))
+    with caplog.at_level("DEBUG", logger=module.__name__):
+        transport.notify(2, bytes(13), plaintext=plaintext)
+    # Ignored, not guessed: the request still needs the 01 50 route.
+    assert not task.done() and rig.client.connected
+    assert not rig.states and not rig.envelopes
+    assert plaintext.hex(" ") in caplog.text
+    transport.notify(2, bytes(13))
+    assert (await task).opcode == 0x02
+    await rig.client.disconnect()
+
+
+async def test_request_on_unknown_route_only_times_out(rig):
+    transport = await connect(rig)
+    task = await waiting_request(rig, transport, timeout=0.05)
+    plaintext = b"\x02\x50" + P.compose_request(b"\x02" + bytes(13))
     transport.notify(2, bytes(13), plaintext=plaintext)
-    with pytest.raises(MalformedResponseError):
+    with pytest.raises(RequestTimeoutError):
         await task
     assert not rig.states and not rig.envelopes and not rig.client.connected
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        C.set_current_date(12, 35, 22, 5),
+        C.set_clock_settings(True, 3, 1),
+        C.set_music_playlist([1, 2, 3]),
+    ],
+)
+async def test_write_acknowledgements_of_any_length_keep_session(rig, payload):
+    """Hardware regression: SET_CURRENT_DATE's acks retired the session."""
+    transport = await connect(rig)
+    plaintext = P.encode_command(payload)
+    acks = (
+        bytes([0x00, 0x7F, 0x01, len(plaintext)]) + bytes(5),
+        bytes([0x01, 0x10, len(plaintext) - 2, 0x00]),
+    )
+
+    async def acknowledge(_frame):
+        for ack in acks:
+            transport.notify(0, b"", plaintext=ack)
+
+    transport.on_write = acknowledge
+    await rig.client.send(payload)
+    assert rig.client.connected and rig.client.last_error is None
+    task = await waiting_request(rig, transport)
+    transport.notify(2, bytes(13))
+    assert (await task).opcode == 0x02
+    await rig.client.disconnect()
+
+
+async def test_malformed_fe_on_application_route_logs_and_retires(rig, caplog):
+    transport = await connect(rig)
+    task = await waiting_request(rig, transport)
+    plaintext = bytes.fromhex("0150fe0218051e")
+    with caplog.at_level("DEBUG", logger=module.__name__):
+        transport.notify(2, b"", plaintext=plaintext)
+    with pytest.raises(MalformedResponseError, match="application route"):
+        await task
+    assert not rig.client.connected
+    assert plaintext.hex(" ") in caplog.text
 
 
 @pytest.mark.parametrize(

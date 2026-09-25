@@ -191,7 +191,7 @@ write acknowledgement or full-profile verification merely from arrival.
 | `RequestTimeoutError` | Response deadline expired; session invalidated |
 | `DisconnectedError` | No usable session, interrupted connection or failed cleanup |
 | `MalformedResponseError` | Invalid MPID/FE frame or known typed payload |
-| `UnsupportedResponseError` | Unknown opcode/request or unavailable typed decoder |
+| `UnsupportedResponseError` | Unsupported request or unavailable typed decoder (an unknown inbound opcode is ignored) |
 | `FreshSessionRequiredError` | Repeated response opcode, sequence exhaustion or bounded receive history exhausted |
 
 Transport backend exceptions are retained for connect/write failures. Cancellation
@@ -204,18 +204,27 @@ declared encrypted-body length including CRC byte, header CRC-8 and decrypted
 body CRC-8. An FE frame has an exact nonzero declared application length and
 the documented XOR checksum. Application responses use the `01 50` route,
 present in both the independent `rxDecrypt` / `responseFrame` golden vectors
-and their generator. Exact target-observed transport acknowledgements
-(`00 7f 01 XX 00 00 00 00 00`, XX = `03`, `06`, `07`, `12`;
-`01 10 XX 00`, XX = `04`, `05`, `10`) are ignored
-and cannot satisfy a request. Bare FE data, other transmit-route `01 10` payloads, and all other SSI routes are rejected, not guessed from channel
-bytes. This is the supported application receive allowlist, not a claim that no
-other firmware route can ever exist. New routes require source-backed vectors
-before support. Parsing never searches
+and their generator. Write acknowledgements are ignored and cannot satisfy a
+request: `00 7f 01 NN 00 00 00 00 00` and `01 10 NN 00`, where the
+target-observed values of `NN` (`03`, `06`, `07`, `12` and `04`, `05`, `10`)
+all equal the MPID plaintext length and the FE-frame length of the frame this
+client had just written (ENABLE_RX, a one-byte query, a two-byte setter, the
+13-byte playlist). Any write length is therefore accepted, with the same fixed
+bytes. A decrypted, CRC-valid notification that is not on the `01 50` route
+(another SSI route, bare FE data, a transmit-route payload other than the
+acknowledgement) or that carries a valid FE frame with an opcode outside the
+response table is logged at debug level with its plaintext and ignored: it can
+never complete a request, so a request whose response only arrives that way
+times out and retires the session. This is the supported application receive
+allowlist, not a claim that no other firmware route can ever exist. New routes
+require source-backed vectors before support. Parsing never searches
 arbitrary bytes for a later FE marker or accepts trailing/truncated bytes. Valid
 non-FE events on the confirmed `01 50` route
 (such as the existing `01 50 02 ...` golden vector) are ignored as non-application
-events. No fragmentation or reassembly format has been invented; a truncated
-notification fails validation and retires the session.
+events. No fragmentation or reassembly format has been invented; an invalid MPID
+header or body CRC, and a truncated or checksum-failing FE frame on the `01 50`
+route, fail validation and retire the session (the rejected plaintext is logged
+at debug level first).
 
 GLOBAL_STATE is exactly thirteen bytes (26 nibbles). Short payloads are no longer
 zero-padded and long payloads are no longer truncated. The original 14-byte

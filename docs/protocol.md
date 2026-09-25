@@ -84,13 +84,16 @@ MPID frame:   0x7E | seq(4) | len+1(2) | crc8 | AES-128-CTR(SSI0-wrap + crc8)
 To receive data responses, first send the transport command `ENABLE_RX` (`01 50 01`). A response
 arrives as `SSI0 | FE-frame | [response_opcode] + data`.
 
-The exact plaintext transport events `00 7f 01 XX 00 00 00 00 00`
-(XX = `03`, `06`, `07`, `12`) and `01 10 XX 00` (XX = `04`, `05`, `10`)
-are target-observed session/request
-acknowledgements. The Python client ignores only these fixed events without
-interpreting them as application responses; no other `00 7f` payload is
-accepted. Application responses still require the `01 50` route and a valid FE
-frame.
+Every write is acknowledged with two plaintext transport events,
+`00 7f 01 NN 00 00 00 00 00` and `01 10 NN 00`. In all target observations
+(`NN` = `03`, `06`, `07`, `12` and `04`, `05`, `10`) the first carries the
+length of the MPID plaintext just written and the second echoes the SSI0
+transmit header with the FE-frame length; for example `SET_CURRENT_DATE`
+(5 bytes) yields `00 7f 01 0a ...` and `01 10 08 00`. The Python client
+ignores these events without interpreting them as application responses. It
+also ignores (with a debug log of the plaintext) valid notifications on other
+routes and FE frames with unknown opcodes; application responses still require
+the `01 50` route and a valid FE frame.
 
 ## Commands
 
