@@ -4,10 +4,69 @@ All notable changes to the `lumalou-gld09` distribution (a fork of
 [stramanu/lumalou](https://github.com/stramanu/lumalou)) are documented here.
 The import package remains `lumalou`.
 
-## Unreleased
+## 0.3.0 - 2026-09-25
+
+### Behaviour aligned with upstream
+
+Hardware testing on firmware 0.3.7 contradicted some of the strictness this
+fork had added. The session behaviour now matches upstream `stramanu/lumalou`
+there. The fork keeps what Home Assistant needs: `client_factory`, device
+fingerprint binding, the schedule/profile codecs and the validated builders.
+
+- An inbound frame never ends the session. Like upstream, the client ignores
+  every frame it cannot use and logs it at debug level: MPID length/CRC
+  failures, the bare `01 50` route header, truncated or checksum-failing FE
+  frames, unknown opcodes, and known responses whose payload fails
+  validation. 0.2.1 retired the session with `MalformedResponseError` instead;
+  on hardware this happened after every `routine_control` 1, 2 and 3, which
+  send a bare `01 50` frame.
+- Only the pending request can fail, and only through its own response: a
+  frame with the awaited opcode whose FE checksum or payload is invalid
+  (`MalformedResponseError`), or a timeout (`RequestTimeoutError`). Both
+  still retire the session. A malformed unsolicited frame is not delivered to
+  callbacks and does not count as an observation of its type.
+- The receive history no longer retires the session after 4096
+  notifications (a push-driven session reached that within days). The client
+  keeps the last 1024 sequence numbers (`client.RX_HISTORY`) and drops
+  duplicates and frames at or below the oldest forgotten number.
+- A request refused with `FreshSessionRequiredError` because its type was
+  pushed while the request was being scheduled no longer disconnects;
+  nothing was written. This now matches the refusal raised before scheduling.
+
+Unchanged and still stricter than upstream: each response type can be
+requested once per session, and a pushed observation consumes that
+eligibility. Upstream has no such guard (and falls back to cached state on
+timeout).
+
+### Added
+
+- Typed decoders for the single-value responses, based on firmware 0.3.7
+  reads: `responses.SINGLE_VALUE_RESPONSES` (opcode to request name for
+  `led_brightness`, `light_color`, `light_duration`, `volume`,
+  `routine_volume`, `song_playing`, `playlist_duration`, `operation_mode`,
+  `activity_state`, `current_stage`, `r2r_status`, `routine_mode_status`,
+  `r2r_alarm_status`, `nap_current_status`, `transmission_mode`) and
+  `parse_single_value` (exactly one byte to `int`). `ResponseEnvelope.decode()`
+  returns the `int` for these instead of raising `UnsupportedResponseError`.
+- `responses.parse_routine_music_status`: `ROUTINE_MUSIC_STATUS` (0x93) uses
+  the SET layout and decodes to `RoutineMusicSettings`.
+- `RoutineTaskState` (0 pending, 1 current, 2 done) and
+  `RoutineTaskStatus.task_state(task_id)`, `.states_by_task_id` and
+  `.current_task_id`. Hardware confirmed that nibble *i* is task id *i* + 1.
+- `commands.UNANSWERED_REQUESTS` (`nap_alarm_status`, `nap_alarm`): firmware
+  0.3.7 never answers them. The builders remain.
+- `protocol.parse_response_frame` reports error `"empty"` for the bare
+  `01 50` header, and it includes the unauthenticated `opcode` with a
+  `"checksum"` error.
+- `tools/hw_probe`: an opt-in hardware probe CLI (not published). It is
+  documented with the macOS Bluetooth permission caveat. `read-all` skips the
+  unanswered requests unless you pass `--include-unanswered`.
 
 ### Changed
 
+- Documented hardware behaviour: routine music and both reward sounds are
+  0/1 on the device. The builders still accept the full byte and nibbles. The
+  routine volume is 0-9.
 - `play_audio` (0-7), `start_nap` (0-11), `routine_control` (0-4) and
   `set_current_date` (hour 0-23, minute and second 0-59, weekday 0-6) reject
   out-of-range values with `ValueError` instead of sending them.

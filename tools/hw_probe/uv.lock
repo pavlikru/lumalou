@@ -281,7 +281,7 @@ wheels = [
 
 [[package]]
 name = "lumalou-gld09"
-version = "0.2.1"
+version = "0.3.0"
 source = { editable = "../../packages/python" }
 dependencies = [
     { name = "bleak" },

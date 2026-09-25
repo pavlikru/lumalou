@@ -36,7 +36,10 @@ asyncio.run(main())
 `request_state()` returns a fresh, strictly validated `GLOBAL_STATE` snapshot;
 it is not a complete device backup. For other blocks use `request_named()` or
 `request_day_routine()`, which return a `ResponseEnvelope` bound to the current
-session. See the repository's
+session. The device pushes GLOBAL_STATE and other responses after commands and
+on physical changes; pass `on_state` / `on_response` to receive them. As in
+upstream, frames the client cannot use are ignored and never end the session.
+See the repository's
 [client contract](../../docs/client-contract.md) and
 [schedule codec reference](../../docs/schedule-codecs.md).
 
