@@ -1,7 +1,8 @@
 """Strict codecs for the schedule blocks observed in the deployed web client.
 
-These are wire representations, not hardware-verified restore operations.
-Routine slots retain their original positions and step numbers; never group or
+On firmware 0.3.7 day routines, ready-to-rise/sleepy times and the alarm week
+were written with these encoders and read back byte for byte; that is not a
+guarantee for other firmware or an automatic restore procedure. Routine slots retain their original positions and step numbers; never group or
 sort them when backing up a device. Unknown encodings raise instead of becoming
 defaults. See docs/schedule-codecs.md for provenance and remaining ambiguity.
 """
@@ -208,9 +209,26 @@ def decode_daily_routine(data: bytes) -> DailyRoutine:
     )
 
 
+class RoutineTaskState(IntEnum):
+    """Task state nibble values observed on hardware (firmware 0.3.7)."""
+
+    PENDING = 0
+    CURRENT = 1
+    DONE = 2
+
+
 @dataclass(frozen=True)
 class RoutineTaskStatus:
-    """Runtime-only status: enum meanings and current-step sentinels unknown."""
+    """Runtime-only routine progress (response 0x94, also pushed on change).
+
+    Hardware-verified on firmware 0.3.7: ``task_states[i]`` is the state of
+    task **id** ``i + 1`` (the routine task, not the step or slot position),
+    with the values in ``RoutineTaskState`` (0 pending, 1 current, 2 done).
+    ``current_step`` is 0 before the routine starts (including after a manual
+    start, while the icons preview), then the running step number; after the
+    last step it reads N + 1 briefly before the device resets it to 0. Other
+    nibble values are preserved, not coerced.
+    """
 
     current_step: int
     task_states: tuple[int, ...]
@@ -220,6 +238,24 @@ class RoutineTaskStatus:
         _tuple(self.task_states, 12, "task states")
         for value in self.task_states:
             _integer(value, 0, 15, "task state nibble")
+
+    def task_state(self, task_id: int) -> int:
+        """Raw state nibble of routine task ``task_id`` (1..12)."""
+        _integer(task_id, 1, 12, "task id")
+        return self.task_states[task_id - 1]
+
+    @property
+    def states_by_task_id(self) -> dict[int, int]:
+        """Map every task id 1..12 to its raw state nibble."""
+        return {index + 1: value for index, value in enumerate(self.task_states)}
+
+    @property
+    def current_task_id(self) -> int | None:
+        """The task id in state CURRENT, or None when no task is current."""
+        for index, value in enumerate(self.task_states):
+            if value == RoutineTaskState.CURRENT:
+                return index + 1
+        return None
 
 
 def decode_routine_task_status(data: bytes) -> RoutineTaskStatus:

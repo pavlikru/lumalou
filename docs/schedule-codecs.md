@@ -73,8 +73,13 @@ plus twelve zero slots is a different clear representation. The physical
 meaning of empty routines or midnight remains a hardware-validation question.
 
 `RoutineTaskStatus` is runtime only, never persistent replay configuration.
-Status nibbles retain values 0..15 without invented enum names. The current-step
-byte retains all values 0..255 because its sentinels/range are not established.
+Hardware (firmware 0.3.7) established the layout: status nibble *i* belongs to
+routine task id *i* + 1 (not to a step or slot), with 0 pending, 1 current and
+2 done (`RoutineTaskState`). `task_state(task_id)`, `states_by_task_id` and
+`current_task_id` read it by task id. The current step is 0 before the routine
+starts, then the running step, and N + 1 once all N steps are done, before
+the device resets it to 0. The device pushes the status on every change. Other
+nibble values (3..15) and current-step bytes are preserved, not coerced.
 
 ## Verification
 

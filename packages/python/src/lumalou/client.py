@@ -88,6 +88,10 @@ class ResponseEnvelope:
                 return R.parse_music_playlist(self.args)
             if self.opcode == 0x99:
                 return R.parse_clock_settings(self.args)
+            if self.opcode == 0x93:
+                return R.parse_routine_music_status(self.args)
+            if self.opcode in R.SINGLE_VALUE_RESPONSES:
+                return R.parse_single_value(self.args)
             return R.parse_schedule_response(self.opcode, self.args)
         except ValueError as err:
             if self.opcode in _TYPED_RESPONSES:
@@ -104,9 +108,11 @@ _TYPED_RESPONSES = {
     0x22,
     0x23,
     0x27,
+    0x93,
     0x94,
     0x99,
     *DAY_ROUTINE_RESPONSES.values(),
+    *R.SINGLE_VALUE_RESPONSES,
 }
 _REQUEST_RESPONSES = {
     "global_state": 0x02,
@@ -569,6 +575,12 @@ class LumalouClient:
                     future.exception()  # A failed write can leave an unawaited waiter.
 
     async def request_named(self, name: str, timeout: float = 3.0) -> ResponseEnvelope:
+        """Read one named response (see ``request``).
+
+        Firmware 0.3.7 never answers ``commands.UNANSWERED_REQUESTS``
+        (``nap_alarm_status``, ``nap_alarm``): those time out and retire the
+        session, so keep them out of bulk reads.
+        """
         if name not in _REQUEST_RESPONSES:
             raise UnsupportedResponseError("unsupported named request")
         return await self.request(C.request(name), _REQUEST_RESPONSES[name], timeout)

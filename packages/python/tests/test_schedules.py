@@ -12,6 +12,7 @@ from lumalou.schedules import (
     ClockTime,
     DailyRoutine,
     RoutineTask,
+    RoutineTaskState,
     RoutineTaskStatus,
     WeeklyAlarms,
     WeeklyTimes,
@@ -246,3 +247,38 @@ def test_all_valid_bcd_times_round_trip():
         for minute in range(60):
             expected = WeeklyTimes((ClockTime(hour, minute),) * 7)
             assert decode_weekly_times(encode_weekly_times(expected)) == expected
+
+
+# Hardware sequence (firmware 0.3.7) for a Friday routine with task 3 at step
+# 1, task 4 at step 2 and task 10 at step 3, advanced with the remote.
+@pytest.mark.parametrize(
+    ("raw", "step", "states", "current"),
+    [
+        ("00000000000000", 0, {}, None),
+        ("01001000000000", 1, {3: 1}, 3),
+        ("02002100000000", 2, {3: 2, 4: 1}, 4),
+        ("03002200000100", 3, {3: 2, 4: 2, 10: 1}, 10),
+        ("04002200000200", 4, {3: 2, 4: 2, 10: 2}, None),
+    ],
+)
+def test_task_states_are_keyed_by_task_id(raw, step, states, current):
+    status = decode_routine_task_status(bytes.fromhex(raw))
+    assert status.current_step == step
+    expected = {task_id: states.get(task_id, 0) for task_id in range(1, 13)}
+    assert status.states_by_task_id == expected
+    for task_id, value in expected.items():
+        assert status.task_state(task_id) == value
+    assert status.current_task_id == current
+    assert RoutineTaskState(2) is RoutineTaskState.DONE
+
+
+@pytest.mark.parametrize("task_id", [0, 13, True, 1.0, "1"])
+def test_task_state_rejects_invalid_task_ids(task_id):
+    with pytest.raises(ValueError):
+        RoutineTaskStatus(0, (0,) * 12).task_state(task_id)
+
+
+def test_unknown_task_state_nibbles_are_preserved():
+    status = decode_routine_task_status(bytes.fromhex("01f30000000000"))
+    assert status.task_state(1) == 15 and status.task_state(2) == 3
+    assert status.current_task_id is None

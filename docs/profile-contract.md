@@ -81,15 +81,15 @@ day requests remain in `spec/schedule-vectors.json`.
 | `r2r_times`, `sleepy_times` | Exactly 14 bytes, seven Sunday-first BCD time pairs or FF FF. Midnight and no time remain distinct. |
 | `r2r_alarms` | Exactly 4 bytes, seven alarm nibbles and uninterpreted sound nibble. |
 | Seven `request_day_routine` days | Exactly 14 bytes; preserve original slot positions, zeros, step numbers and task order. Friday/Saturday responses are 90/91, not contiguous with Sunday–Thursday 2B–2F. |
-| `routine_task_status` | Exactly 7 bytes: current-step byte and twelve raw state nibbles. State meanings/sentinels unproven; runtime-only. |
+| `routine_task_status` | Exactly 7 bytes: current-step byte and twelve state nibbles. Hardware-verified (firmware 0.3.7): nibble *i* is task id *i*+1, values 0 pending / 1 current / 2 done (`RoutineTaskState`); current step 0 = not started, N+1 = finished. Pushed on every change; runtime-only. |
 | `music_playlist` | Exactly 12 ordered slots, IDs 0–12; verified from a fresh response on the target. IDs above 12 are rejected by the independent GLD09 controller and by the strict playlist model. |
 | `clock_settings` | Exactly two bytes `[display, brightness<<4 | format]`; target response matched the independently observed display/brightness/format values and SET encoding. Display is 0/1, brightness 0–9, format 0/1; reserved values fail. |
-| `routine_music_status` | Standalone response layout remains unknown. Routine music/reward settings are included in GLOBAL_STATE's mapping; do not infer a `0x93` schema from SET arguments. |
+| `routine_music_status` | Exactly 2 bytes in the SET (`69`) layout `[music, task<<4 \| routine]`, decoded to `RoutineMusicSettings`. Hardware read back `01 11` (factory) and `02 34` after writing 2/3/4. On hardware all three are booleans (0/1); other values are preserved. |
 | `current_date` | Exactly 4 BCD bytes: hour 0–23, minute/second 0–59, Sunday-first weekday 0–6. Typed immutable `CurrentDate`, established by read-only target observations consistent with the existing SET encoding. Transient clock only: no calendar date, timezone or persistent profile value. |
 | `toyic_fw_version` | No response length or field encoding established. No firmware string/endianness/zero-termination assumptions. |
-| `led_brightness`, `light_color`, `light_duration`, `volume`, `routine_volume`, `song_playing`, `playlist_duration` | Named response identities only; no dedicated response payload schema in the pinned bundle. Related GLOBAL_STATE fields do not establish standalone reply lengths. |
-| `operation_mode`, `activity_state`, `current_stage`, `transmission_mode`, `time_prescaler` | Named response identities only. Prescaler SET remains prohibited. |
-| `routine_mode_status`, `r2r_status`, `r2r_alarm_status`, `nap_current_status`, `nap_alarm_status`, `nap_alarm` | Named response identities only; scalar/boolean length and value interpretation must not be invented. |
+| `led_brightness`, `light_color`, `light_duration`, `volume`, `routine_volume`, `song_playing`, `playlist_duration`, `operation_mode`, `activity_state`, `current_stage`, `transmission_mode`, `routine_mode_status`, `r2r_status`, `r2r_alarm_status`, `nap_current_status` | Exactly one byte, decoded to `int` (`SINGLE_VALUE_RESPONSES`, `parse_single_value`). Every one answered with one byte on firmware 0.3.7, equal to the matching GLOBAL_STATE field where one exists. Only the length is enforced. |
+| `time_prescaler` | One byte observed; left raw (no decoder). Prescaler SET remains prohibited. |
+| `nap_alarm_status`, `nap_alarm` | Never answered on firmware 0.3.7 (request times out and retires the session): `commands.UNANSWERED_REQUESTS`. Builders kept; exclude from bulk reads. |
 
 Playlist and clock readback have typed layouts from a single target read. A
 complete profile read now has a typed path for every persistent profile block

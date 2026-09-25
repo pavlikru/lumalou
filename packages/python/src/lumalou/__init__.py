@@ -47,6 +47,7 @@ from .client import (
     ResponseEnvelope,
     UnsupportedResponseError,
 )
+from .commands import UNANSWERED_REQUESTS
 from .factory import (
     InvalidFactoryTokenError,
     parse_factory_device_fingerprint,
@@ -54,17 +55,23 @@ from .factory import (
 from .profile import ClockSettings, MusicPlaylist, OpaqueBlock, RoutineMusicSettings
 from .protocol import build_tx_frame, crc8, decrypt_rx_frame, encode_command
 from .responses import (
+    SINGLE_VALUE_RESPONSES,
     CurrentDate,
     parse_clock_settings,
     parse_current_date,
     parse_music_playlist,
+    parse_routine_music_status,
+    parse_single_value,
 )
+from .schedules import RoutineTaskState, RoutineTaskStatus
 
 __version__ = "0.2.1"
 
 __all__ = [
     "MANUFACTURER_ID",
     "MANUFACTURER_PREFIX",
+    "SINGLE_VALUE_RESPONSES",
+    "UNANSWERED_REQUESTS",
     "Alarm",
     "Audio",
     "ClockFormat",
@@ -90,6 +97,8 @@ __all__ = [
     "ResponseEnvelope",
     "RoutineControl",
     "RoutineMusicSettings",
+    "RoutineTaskState",
+    "RoutineTaskStatus",
     "Song",
     "Stage",
     "UnsupportedResponseError",
@@ -103,4 +112,6 @@ __all__ = [
     "parse_current_date",
     "parse_factory_device_fingerprint",
     "parse_music_playlist",
+    "parse_routine_music_status",
+    "parse_single_value",
 ]

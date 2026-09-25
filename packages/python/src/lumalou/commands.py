@@ -96,7 +96,8 @@ def set_volume(level: int) -> bytes:
 
 
 def set_routine_volume(level: int) -> bytes:
-    # Only the byte representation is established; no hardware range is known.
+    # The device uses 0..9 like SET_VOLUME (read back exactly on firmware
+    # 0.3.7); the full byte stays accepted for lossless restore.
     return _u8(
         COMMANDS["SET_ROUTINE_MODE_VOLUME"],
         _integer(level, 0, 255, "routine volume byte"),
@@ -194,7 +195,11 @@ def set_r2r_alarms(alarms: WeeklyAlarms) -> bytes:
 
 # ---- routine ----
 def set_routine_music_settings(settings: RoutineMusicSettings) -> bytes:
-    """Set the music byte and both reward nibbles; not a routine start action."""
+    """Set routine music and both reward sounds; not a routine start action.
+
+    Each field is effectively a boolean on hardware (0 off, 1 on); the builder
+    still accepts the full byte/nibble range, see ``RoutineMusicSettings``.
+    """
     return _u8(COMMANDS["SET_ROUTINE_MUSIC_STATUS"]) + encode_routine_music_settings(
         settings
     )
@@ -262,6 +267,12 @@ _REQUESTS = {
     "nap_alarm": "REQUEST_NAP_TIME_ALARM",
     "time_prescaler": "REQUEST_TIME_PRESCALER",
 }
+
+
+# Named requests that firmware 0.3.7 never answers (the request times out,
+# which retires the session). The builders stay available for other firmware;
+# do not include these in "read everything" loops.
+UNANSWERED_REQUESTS: frozenset[str] = frozenset({"nap_alarm_status", "nap_alarm"})
 
 
 def request(name: str) -> bytes:

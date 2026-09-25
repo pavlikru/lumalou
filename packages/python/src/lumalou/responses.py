@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ._generated import RESPONSES, Color, OperationMode, Stage
-from .profile import ClockSettings, MusicPlaylist
+from .profile import ClockSettings, MusicPlaylist, RoutineMusicSettings
 from .schedules import (
     DAY_ROUTINE_RESPONSES,
     DailyRoutine,
@@ -72,6 +72,52 @@ def parse_clock_settings(args: bytes) -> ClockSettings:
     if brightness > 9 or clock_format > 1:
         raise ValueError("CLOCK_SETTINGS has unsupported reserved bits")
     return ClockSettings(bool(args[0]), brightness, clock_format)
+
+
+# Responses that carry exactly one byte, keyed by response opcode. The value
+# names match the ``request_named`` names that ask for them. Firmware 0.3.7
+# answered every one of these with a single byte whose value equals the
+# matching GLOBAL_STATE field (where one exists). Only the length is enforced:
+# value ranges are the device's to define (for example ``song_playing`` reports
+# 13, pink noise, for audio source 2, outside the 1..12 playlist range).
+SINGLE_VALUE_RESPONSES: dict[int, str] = {
+    0x14: "song_playing",
+    0x15: "volume",
+    0x17: "led_brightness",
+    0x18: "light_color",
+    0x1A: "playlist_duration",
+    0x1C: "nap_current_status",
+    0x1D: "transmission_mode",
+    0x1E: "operation_mode",
+    0x1F: "activity_state",
+    0x20: "current_stage",
+    0x21: "r2r_status",
+    0x26: "r2r_alarm_status",
+    0x92: "routine_mode_status",
+    0x95: "light_duration",
+    0x98: "routine_volume",
+}
+
+
+def parse_single_value(args: bytes) -> int:
+    """Decode a one-byte response (see ``SINGLE_VALUE_RESPONSES``) as an int."""
+    if not isinstance(args, bytes) or len(args) != 1:
+        raise ValueError("single-value response must contain exactly 1 byte")
+    return args[0]
+
+
+def parse_routine_music_status(args: bytes) -> RoutineMusicSettings:
+    """Decode ROUTINE_MUSIC_STATUS (0x93): music byte, task|routine nibbles.
+
+    Hardware (firmware 0.3.7) answers with the SET_ROUTINE_MUSIC_STATUS (0x69)
+    argument layout and reads back exactly what was written (``01 11`` factory
+    default, ``02 34`` after writing 2/3/4). The device and its app use 0/1 for
+    all three fields (music off/on, reward sound off/on); other values are
+    preserved, not coerced.
+    """
+    if not isinstance(args, bytes) or len(args) != 2:
+        raise ValueError("ROUTINE_MUSIC_STATUS must contain exactly 2 bytes")
+    return RoutineMusicSettings(args[0], args[1] >> 4, args[1] & 0x0F)
 
 
 def parse_r2r_times(args: bytes) -> WeeklyTimes:

@@ -223,8 +223,8 @@ def test_mode_flags_require_explicit_booleans(builder, opcode):
 @pytest.mark.parametrize(
     "opcode,args",
     [
-        (0x93, bytes(2)),
         (0x12, b"1.2"),
+        (0x28, b"\x00"),
     ],
 )
 def test_unimplemented_response_layouts_are_not_guessed(opcode, args):

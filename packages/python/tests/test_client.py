@@ -483,8 +483,10 @@ async def test_every_named_request_sends_exact_query_and_matches_response(rig, v
         0x22: 14,
         0x23: 14,
         0x27: 4,
+        0x93: 2,
         0x94: 7,
         0x99: 2,
+        **dict.fromkeys(module.R.SINGLE_VALUE_RESPONSES, 1),
     }
     args = {
         0x19: bytes(range(1, 13)),
@@ -508,6 +510,8 @@ async def test_every_named_request_sends_exact_query_and_matches_response(rig, v
         assert envelope.decode().slots == tuple(range(1, 13))
     elif opcode == 0x99:
         assert envelope.decode().brightness == 2
+    elif opcode in module.R.SINGLE_VALUE_RESPONSES:
+        assert envelope.decode() == 0
     assert envelope.generation == rig.client.generation
     writes = len(transport.writes)
     with pytest.raises(FreshSessionRequiredError):

@@ -1,8 +1,10 @@
-"""Source-backed configuration *write* layouts, not inferred response schemas.
+"""Source-backed configuration *write* layouts.
 
-The deployed web client has no decoder for responses 0x19, 0x93 or 0x99.
-Do not use these SET codecs to interpret their payloads. Encoding support does
-not establish persistence, idempotency, or safe automatic restoration.
+The deployed web client has no decoder for responses 0x19, 0x93 or 0x99; the
+response decoders in ``lumalou.responses`` rest on hardware reads (firmware
+0.3.7), where each response carried the same layout as its SET arguments and
+read back exactly what was written. Encoding support alone does not establish
+idempotency or safe automatic restoration.
 """
 
 from __future__ import annotations
@@ -81,10 +83,12 @@ def decode_clock_settings_set(data: bytes) -> ClockSettings:
 
 @dataclass(frozen=True)
 class RoutineMusicSettings:
-    """Music byte and reward nibbles; meaning beyond the wire range is unknown.
+    """Routine music byte and task/routine reward-sound nibbles.
 
-    In particular, music is not asserted to be a song ID or boolean, and reward
-    values are not asserted to be booleans or named sound IDs.
+    On hardware (firmware 0.3.7) all three behave as booleans: 0 off, 1 on
+    (factory default 1/1/1), which is also what the deployed app writes. The
+    full byte/nibble range is still accepted and preserved losslessly because
+    other values read back unchanged; their effect is unknown.
     """
 
     music: int
