@@ -60,7 +60,7 @@ from .responses import (
     parse_music_playlist,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 __all__ = [
     "MANUFACTURER_ID",

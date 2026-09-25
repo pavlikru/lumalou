@@ -4,6 +4,30 @@ All notable changes to the `lumalou-gld09` distribution (a fork of
 [stramanu/lumalou](https://github.com/stramanu/lumalou)) are documented here.
 The import package remains `lumalou`.
 
+## 0.2.1 - 2026-09-25
+
+### Fixed
+
+- A write other than a one-byte query, a two-byte setter or the playlist (for
+  example `SET_CURRENT_DATE`) no longer retires the session with
+  `MalformedResponseError("unsupported SSI route or invalid FE
+  length/checksum")`. The device acknowledges every write with
+  `00 7f 01 NN 00 00 00 00 00` and `01 10 NN 00`, where `NN` is the written
+  MPID plaintext / FE-frame length; both shapes are now recognised for any
+  length instead of an exact list of observed values.
+- CRC-valid notifications on SSI routes other than `01 50`, and FE frames with
+  an opcode outside the response table, are ignored instead of retiring the
+  session. They still never complete a request.
+
+### Changed
+
+- Ignored and rejected inbound frames are logged at debug level (`lumalou.client`)
+  with their decrypted plaintext in hex. Frames carry device state and
+  commands only, never key material or the factory token.
+- Malformed FE frames on the `01 50` route now raise
+  `MalformedResponseError("invalid FE length or checksum on the application
+  route")`; they still retire the session, as do MPID CRC or length failures.
+
 ## 0.2.0 - 2026-09-25
 
 First release of the fork. Upstream base: `stramanu/lumalou` `main` at
