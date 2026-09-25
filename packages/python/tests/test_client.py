@@ -8,6 +8,7 @@ from unittest.mock import Mock
 
 import pytest
 from bleak.backends.device import BLEDevice
+
 from lumalou import client as module
 from lumalou import commands as C
 from lumalou import protocol as P
@@ -21,7 +22,7 @@ from lumalou.client import (
     RequestTimeoutError,
     UnsupportedResponseError,
 )
-from lumalou.factory import parse_factory_item_code
+from lumalou.factory import parse_factory_device_fingerprint, parse_factory_item_code
 
 pytestmark = pytest.mark.asyncio
 
@@ -45,6 +46,11 @@ def rig(monkeypatch, synthetic_factory_tokens):
     )
     make_factory_token, factory_keys = synthetic_factory_tokens
     token = make_factory_token()
+    monkeypatch.setattr(
+        module,
+        "parse_factory_device_fingerprint",
+        lambda raw: parse_factory_device_fingerprint(raw, keys=factory_keys),
+    )
     monkeypatch.setattr(
         module,
         "parse_factory_item_code",
@@ -122,6 +128,7 @@ def rig(monkeypatch, synthetic_factory_tokens):
         client=owner,
         device=device,
         factory_token=token,
+        fingerprint=parse_factory_device_fingerprint(token, keys=factory_keys),
         make_factory_token=make_factory_token,
         transports=transports,
         factory=Transport,
@@ -136,6 +143,75 @@ async def connect(rig):
     transport = rig.transports[-1]
     transport.keys = (rig.client._key, rig.client._nonce, rig.client._salt)
     return transport
+
+
+async def test_device_fingerprint_binding_and_session_lifetime(rig):
+    client = LumalouClient(
+        rig.device,
+        client_factory=rig.factory,
+        expected_device_fingerprint=rig.fingerprint,
+    )
+    assert client.device_fingerprint is None
+    await client.connect()
+    assert client.device_fingerprint == rig.fingerprint
+    await client.disconnect()
+    assert client.device_fingerprint is None
+
+
+async def test_different_device_key_rejected_before_notify_and_writes(rig):
+    client = LumalouClient(
+        rig.device,
+        client_factory=rig.factory,
+        expected_device_fingerprint="0" * 64,
+    )
+    with pytest.raises(FactoryIdentityMismatchError, match="expected device"):
+        await client.connect()
+    transport = rig.transports[-1]
+    assert not transport.writes
+    assert transport.notify_callback is None
+    assert transport.disconnect_count == 1
+    assert client.device_fingerprint is None
+
+
+async def test_reconnect_rechecks_device_key_even_with_same_item(rig, monkeypatch):
+    client = LumalouClient(
+        rig.device,
+        client_factory=rig.factory,
+        expected_device_fingerprint=rig.fingerprint,
+    )
+    await client.connect()
+    await client.disconnect()
+    _, different_key = module.crypto.generate_keypair()
+
+    async def different_device(_self, characteristic):
+        assert characteristic == module.FACTORY
+        return rig.make_factory_token(public_key=different_key)
+
+    monkeypatch.setattr(rig.factory, "read_gatt_char", different_device)
+    with pytest.raises(FactoryIdentityMismatchError, match="expected device"):
+        await client.connect()
+    assert client.device_fingerprint is None
+    assert not rig.transports[-1].writes
+    assert rig.transports[-1].notify_callback is None
+
+
+async def test_default_connection_never_decodes_item_suffix(rig, monkeypatch):
+    monkeypatch.setattr(
+        module,
+        "parse_factory_item_code",
+        Mock(side_effect=AssertionError("item suffix must not be decoded")),
+    )
+    client = LumalouClient(rig.device, client_factory=rig.factory)
+    await client.connect()
+    assert client.device_fingerprint == rig.fingerprint
+    await client.disconnect()
+
+
+@pytest.mark.parametrize("fingerprint", ["", "a" * 63, "G" * 64, "A" * 64, 123])
+async def test_invalid_expected_fingerprint_rejected_before_io(rig, fingerprint):
+    with pytest.raises(ValueError, match="64 lowercase hex"):
+        LumalouClient(rig.device, expected_device_fingerprint=fingerprint)
+    assert not rig.transports
 
 
 async def waiting_request(rig, transport, *, opcode=0x02, payload=None, timeout=1):

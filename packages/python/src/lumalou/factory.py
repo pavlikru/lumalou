@@ -7,6 +7,7 @@ independent MIT-licensed gld09-control project at commit
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping
 from collections.abc import Set as AbstractSet
 from types import MappingProxyType
@@ -77,6 +78,35 @@ def parse_factory_item_code(
         )
     ):
         raise ValueError("supported item codes must be six-character lowercase ASCII")
+    _verify_factory_device_key(token, keys=keys)
+    serial_bytes = token[_SERIAL_START:_SERIAL_END]
+    if any(byte < 0x20 or byte > 0x7E for byte in serial_bytes):
+        raise InvalidFactoryTokenError("factory token serial is not printable ASCII")
+    item_code = token[_ITEM_START:_ITEM_END].decode("ascii").lower()
+    if supported_codes is not None and item_code not in supported_codes:
+        raise InvalidFactoryTokenError("unsupported factory item code")
+    return item_code
+
+
+def parse_factory_device_fingerprint(
+    token: bytes, *, keys: Mapping[int, bytes] | None = None
+) -> str:
+    """Authenticate FACTORY and return SHA-256 of its compressed P-256 device key.
+
+    The 64 lowercase hex characters identify a device key, not a model or SKU.
+    Serial fields are neither decoded nor returned. Salt and signature changes
+    do not change this identity. ``keys`` has the same trust requirements as
+    :func:`parse_factory_item_code`. Treat the fingerprint as a private stable
+    identifier, not anonymous telemetry. It does not prove live key possession.
+    """
+    return hashlib.sha256(_verify_factory_device_key(token, keys=keys)).hexdigest()
+
+
+def _verify_factory_device_key(
+    token: bytes, *, keys: Mapping[int, bytes] | None = None
+) -> bytes:
+    if not isinstance(token, bytes):
+        raise TypeError("factory token must be bytes")
     if len(token) != FACTORY_TOKEN_LENGTH:
         raise InvalidFactoryTokenError("factory token has invalid length")
     if token[0] != _TOKEN_VERSION:
@@ -111,10 +141,4 @@ def parse_factory_item_code(
     except ValueError as error:
         raise InvalidFactoryTokenError("factory token device key is invalid") from error
 
-    serial_bytes = token[_SERIAL_START:_SERIAL_END]
-    if any(byte < 0x20 or byte > 0x7E for byte in serial_bytes):
-        raise InvalidFactoryTokenError("factory token serial is not printable ASCII")
-    item_code = token[_ITEM_START:_ITEM_END].decode("ascii").lower()
-    if supported_codes is not None and item_code not in supported_codes:
-        raise InvalidFactoryTokenError("unsupported factory item code")
-    return item_code
+    return token[_DEVICE_KEY_START:_DEVICE_KEY_END]

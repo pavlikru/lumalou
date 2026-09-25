@@ -6,7 +6,44 @@ import pytest
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
-from lumalou import InvalidFactoryTokenError, parse_factory_item_code
+
+from lumalou import (
+    InvalidFactoryTokenError,
+    parse_factory_device_fingerprint,
+    parse_factory_item_code,
+)
+
+
+def test_device_fingerprint_is_key_hash_independent_of_serial_and_salt():
+    import hashlib
+
+    token, keys = _signed_token()
+    fingerprint = parse_factory_device_fingerprint(token, keys=keys)
+    assert fingerprint == hashlib.sha256(token[25:58]).hexdigest()
+    assert (
+        parse_factory_device_fingerprint(token[:188] + b"salt", keys=keys)
+        == fingerprint
+    )
+    other, other_keys = _signed_token(b"999999", device_key=token[25:58])
+    assert parse_factory_device_fingerprint(other, keys=other_keys) == fingerprint
+    different, different_keys = _signed_token()
+    assert (
+        parse_factory_device_fingerprint(different, keys=different_keys) != fingerprint
+    )
+
+
+@pytest.mark.parametrize("offset", [1, 25, 57, 65, 123, 124, 187])
+def test_fingerprint_rejects_tampering(offset):
+    token, keys = _signed_token()
+    damaged = bytearray(token)
+    damaged[offset] ^= 1
+    with pytest.raises(InvalidFactoryTokenError):
+        parse_factory_device_fingerprint(bytes(damaged), keys=keys)
+
+
+def test_fingerprint_does_not_interpret_serial_suffix():
+    token, keys = _signed_token(b"\xff" * 6)
+    assert len(parse_factory_device_fingerprint(token, keys=keys)) == 64
 
 
 def _signed_token(

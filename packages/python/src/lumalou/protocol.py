@@ -58,7 +58,7 @@ def parse_response_frame(plaintext: bytes) -> dict:
     """Validate one FE response; no scanning, zero padding or reassembly.
 
     Valid MPID payloads can carry non-FE transport notifications. The observed
-    00 7f 01 03/06 00 00 00 00 and 01 10 04 00 acknowledgements, plus the
+    00 7f 01 03/06/07/12 00 00 00 00 and 01 10 04/05/10 00 acknowledgements, plus the
     established 01 50 02 ... event, are not application responses and must not
     invalidate the session.
     """
@@ -68,7 +68,11 @@ def parse_response_frame(plaintext: bytes) -> dict:
     if plaintext in {
         bytes.fromhex("00 7f 01 03 00 00 00 00 00"),
         bytes.fromhex("00 7f 01 06 00 00 00 00 00"),
+        bytes.fromhex("00 7f 01 07 00 00 00 00 00"),
+        bytes.fromhex("00 7f 01 12 00 00 00 00 00"),
         bytes.fromhex("01 10 04 00"),
+        bytes.fromhex("01 10 05 00"),
+        bytes.fromhex("01 10 10 00"),
     }:
         return {"ssi": ssi, "ok": False, "error": "unsupported_transport"}
     if plaintext[:2] != SSI0_RX_HEADER:

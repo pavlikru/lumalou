@@ -34,7 +34,14 @@ service. **Never write to it** — a wrong write bricks the device.
 
 ## Handshake (local, no server)
 
-The Python `parse_factory_item_code` helper validates an exact 192-byte FACTORY
+The Python `parse_factory_device_fingerprint` helper validates an exact 192-byte
+FACTORY token and its manufacturing signature, validates the signed P-256 device
+key, and returns SHA-256 of its compressed 33-byte encoding. It never decodes
+or returns a serial suffix. The 64-character lowercase hex fingerprint remains
+stable across salt/signature changes and is a private per-key identifier, not
+a product-model claim or proof of live key possession.
+
+The legacy Python `parse_factory_item_code` helper validates an exact 192-byte FACTORY
 token and verifies its ECDSA P-256/SHA-256 manufacturing signature before
 returning the signed six-byte item field as lowercase ASCII. It preserves all
 six characters; no GLD09 padding or item-code mapping has been established.
@@ -43,17 +50,18 @@ the public verification key and field offsets is the independent MIT-licensed
 [`kvdb/gld09-control` project](https://github.com/kvdb/gld09-control/tree/6e3aff894b0065b760ba44f43a36c7e9988cead9),
 with attribution in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).
 The final four-byte salt is outside the signed region. This helper is pure and
-the client calls it on every connection. A token with an invalid signature,
-malformed signed key, or invalid item field is rejected before notification,
+the client authenticates the device fingerprint on every connection. A token with an invalid signature
+or malformed signed key is rejected before notification,
 key derivation, or any SESSION/TX write. Callers such as Home Assistant can
-also pass `expected_factory_item_code` to bind the session to one exact signed
-item value; a mismatch aborts and releases the transport.
+pass `expected_device_fingerprint` to bind the session to one signed device key;
+a mismatch aborts and releases the transport. `expected_factory_item_code`
+remains an optional legacy item-field check, not a per-device binding.
 
 1. Read and authenticate the MFG token from **factory**. It contains the
    device's compressed P-256 public key at bytes `[25:58]` and a 4-byte salt
    in the last 4 bytes.
-2. If the caller supplied an expected item code, require an exact match with
-   the authenticated field.
+2. If the caller supplied an expected device fingerprint, require an exact
+   match with the authenticated key hash. Check any legacy item pin as well.
 3. Generate an ephemeral P-256 keypair. Compute
    `shared = ECDH(app_priv, device_pub)` (X coord, 32 B).
 4. Derive the session key by stretching: 100 rounds of AES-128-CTR over `shared`, each round using
@@ -80,8 +88,9 @@ MPID frame:   0x7E | seq(4) | len+1(2) | crc8 | AES-128-CTR(SSI0-wrap + crc8)
 To receive data responses, first send the transport command `ENABLE_RX` (`01 50 01`). A response
 arrives as `SSI0 | FE-frame | [response_opcode] + data`.
 
-The exact plaintext transport events `00 7f 01 03 00 00 00 00 00` and
-`00 7f 01 06 00 00 00 00 00` are target-observed session/request
+The exact plaintext transport events `00 7f 01 XX 00 00 00 00 00`
+(XX = `03`, `06`, `07`, `12`) and `01 10 XX 00` (XX = `04`, `05`, `10`)
+are target-observed session/request
 acknowledgements. The Python client ignores only these fixed events without
 interpreting them as application responses; no other `00 7f` payload is
 accepted. Application responses still require the `01 50` route and a valid FE

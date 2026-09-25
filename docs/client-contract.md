@@ -8,11 +8,19 @@ acceptance of the client or profile restoration.
 
 ## Home Assistant connection boundary
 
-Construct `LumalouClient(ble_device, expected_factory_item_code=...,
+Construct `LumalouClient(ble_device, expected_device_fingerprint=...,
 client_factory=..., on_response=..., disconnected_callback=...)` when the
-application must bind sessions to a specific signed product item. `ble_device`
+application must bind sessions to a specific signed device public key. `ble_device`
 can be the current `BLEDevice` supplied by Home Assistant. Even without an
-expected item pin, the client always requires a valid signed FACTORY token.
+expected fingerprint, the client always requires a valid signed FACTORY token.
+After successful connection, `device_fingerprint` exposes the SHA-256 digest
+of the signed compressed P-256 public key as 64 lowercase hexadecimal characters.
+It is `None` before connection and after invalidation. Store it privately after
+user confirmation, then supply it on subsequent clients to reject a different
+device before any SESSION/TX writes. Do not display or publish it in diagnostics.
+This identifies a signed key, not a SKU, and is not proof of live key possession.
+The legacy `expected_factory_item_code` option remains available but is not
+required; without it, the serial suffix is not decoded.
 The factory has the normal Bleak constructor shape:
 `factory(device, disconnected_callback=callback)` and returns a transport with
 async `connect`, `disconnect`, `start_notify`, `read_gatt_char`, and
@@ -22,7 +30,7 @@ synchronous and receives the `LumalouClient`, after state has been invalidated.
 
 `connect(timeout=20)` creates a new transport, keys, nonce, sequence and
 generation; it does not reuse a disconnected transport. On every connection it
-verifies the signed FACTORY token and compares the item code when pinned before
+verifies the signed FACTORY token and compares supplied identity pins before
 notification, key derivation, SESSION, or TX. Identity failures abort and close
 the transport. It then performs the session handshake and ENABLE_RX, never
 clock/configuration commands.
@@ -197,9 +205,10 @@ declared encrypted-body length including CRC byte, header CRC-8 and decrypted
 body CRC-8. An FE frame has an exact nonzero declared application length and
 the documented XOR checksum. Application responses use the `01 50` route,
 present in both the independent `rxDecrypt` / `responseFrame` golden vectors
-and their generator. Two exact target-observed transport acknowledgements
-(`00 7f 01 03 00 00 00 00 00` and `00 7f 01 06 00 00 00 00 00`) are ignored
-and cannot satisfy a request. Bare FE data, the transmit route `01 10`, and all other SSI routes are rejected, not guessed from channel
+and their generator. Exact target-observed transport acknowledgements
+(`00 7f 01 XX 00 00 00 00 00`, XX = `03`, `06`, `07`, `12`;
+`01 10 XX 00`, XX = `04`, `05`, `10`) are ignored
+and cannot satisfy a request. Bare FE data, other transmit-route `01 10` payloads, and all other SSI routes are rejected, not guessed from channel
 bytes. This is the supported application receive allowlist, not a claim that no
 other firmware route can ever exist. New routes require source-backed vectors
 before support. Parsing never searches

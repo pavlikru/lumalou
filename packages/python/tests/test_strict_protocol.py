@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+
 from lumalou import protocol as P
 from lumalou import responses as R
 
@@ -79,7 +80,11 @@ def test_known_non_fe_transport_notification_is_not_an_application_response():
     [
         "00 7f 01 03 00 00 00 00 00",
         "00 7f 01 06 00 00 00 00 00",
+        "00 7f 01 07 00 00 00 00 00",
+        "00 7f 01 12 00 00 00 00 00",
         "01 10 04 00",
+        "01 10 05 00",
+        "01 10 10 00",
     ],
 )
 def test_live_transport_acks_on_007f_route_are_ignored_not_fatal(ack):
@@ -92,7 +97,11 @@ def test_live_transport_acks_on_007f_route_are_ignored_not_fatal(ack):
     for malformed in (
         "00 7f 01 03",
         "00 7f 01 06 00 00 00 00 01",
+        "00 7f 01 07 00 00 00 00 01",
+        "00 7f 01 12 00 00 00 00 01",
         "01 10 04 01",
+        "01 10 05 01",
+        "01 10 10 01",
     ):
         result = P.parse_response_frame(bytes.fromhex(malformed))
         assert not result["ok"]

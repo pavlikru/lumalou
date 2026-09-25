@@ -18,7 +18,11 @@ from . import crypto
 from . import protocol as P
 from . import responses as R
 from ._generated import GATT, RESPONSES
-from .factory import InvalidFactoryTokenError, parse_factory_item_code
+from .factory import (
+    InvalidFactoryTokenError,
+    parse_factory_device_fingerprint,
+    parse_factory_item_code,
+)
 from .schedules import DAY_ROUTINE_RESPONSES
 
 SERVICE = GATT["service"]
@@ -149,7 +153,18 @@ class LumalouClient:
         client_factory: Callable[..., BleakClient] | None = None,
         disconnected_callback: Callable[[LumalouClient], None] | None = None,
         expected_factory_item_code: str | None = None,
+        expected_device_fingerprint: str | None = None,
     ):
+        if expected_device_fingerprint is not None and (
+            not isinstance(expected_device_fingerprint, str)
+            or len(expected_device_fingerprint) != 64
+            or any(c not in "0123456789abcdef" for c in expected_device_fingerprint)
+        ):
+            raise ValueError(
+                "expected device fingerprint must be 64 lowercase hex characters"
+            )
+        self._expected_device_fingerprint = expected_device_fingerprint
+        self._device_fingerprint: str | None = None
         if expected_factory_item_code is not None and (
             not isinstance(expected_factory_item_code, str)
             or len(expected_factory_item_code) != 6
@@ -205,6 +220,11 @@ class LumalouClient:
         return out
 
     @property
+    def device_fingerprint(self) -> str | None:
+        """Authenticated device-key fingerprint for the current session only."""
+        return self._device_fingerprint if self.connected else None
+
+    @property
     def generation(self) -> int:
         return self._generation
 
@@ -225,6 +245,7 @@ class LumalouClient:
         self._session_active = False
         self.connected = False
         self.last_error = error
+        self._device_fingerprint = None
         self._generation += 1
         self._state = None
         self._key = self._nonce = self._salt = None
@@ -330,11 +351,23 @@ class LumalouClient:
         token = bytes(await client.read_gatt_char(FACTORY))
         self._require_session(generation, handshaking=True)
         try:
-            factory_item_code = parse_factory_item_code(token)
+            fingerprint = parse_factory_device_fingerprint(token)
+            factory_item_code = (
+                parse_factory_item_code(token)
+                if self._expected_factory_item_code is not None
+                else None
+            )
         except InvalidFactoryTokenError as error:
             raise FactoryIdentityError(
                 "device factory identity could not be authenticated"
             ) from error
+        if (
+            self._expected_device_fingerprint is not None
+            and fingerprint != self._expected_device_fingerprint
+        ):
+            raise FactoryIdentityMismatchError(
+                "device factory identity does not match the expected device"
+            )
         if (
             self._expected_factory_item_code is not None
             and factory_item_code != self._expected_factory_item_code
@@ -342,6 +375,7 @@ class LumalouClient:
             raise FactoryIdentityMismatchError(
                 "device factory identity does not match the expected item"
             )
+        self._device_fingerprint = fingerprint
         device_pub = crypto.token_device_pubkey(token)
         self._salt = crypto.token_device_salt(token)
         priv, pub = crypto.generate_keypair()
