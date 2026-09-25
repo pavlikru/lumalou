@@ -1,0 +1,55 @@
+name: Publish lumalou-gld09
+
+# Push a tag like v0.2.0 to test, build and publish packages/python to PyPI
+# via Trusted Publishing (OIDC). No API token is stored in the repository.
+# One-time setup on PyPI: add a trusted publisher for this repository with
+# workflow `publish.yml` and environment `pypi`.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Check tag matches package version
+        working-directory: packages/python
+        run: |
+          version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          test "v${version}" = "${GITHUB_REF_NAME}" || { echo "tag ${GITHUB_REF_NAME} != v${version}"; exit 1; }
+      - name: Test
+        working-directory: packages/python
+        run: |
+          pip install -e ".[dev]"
+          pytest -q
+      - name: Build sdist + wheel
+        working-directory: packages/python
+        run: |
+          pip install build twine
+          python -m build
+          twine check --strict dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: packages/python/dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/lumalou-gld09/
+    permissions:
+      id-token: write # PyPI Trusted Publishing (OIDC)
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
