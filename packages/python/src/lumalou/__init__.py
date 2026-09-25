@@ -50,7 +50,6 @@ from .client import (
 from .factory import (
     InvalidFactoryTokenError,
     parse_factory_device_fingerprint,
-    parse_factory_item_code,
 )
 from .profile import ClockSettings, MusicPlaylist, OpaqueBlock, RoutineMusicSettings
 from .protocol import build_tx_frame, crc8, decrypt_rx_frame, encode_command
@@ -103,6 +102,5 @@ __all__ = [
     "parse_clock_settings",
     "parse_current_date",
     "parse_factory_device_fingerprint",
-    "parse_factory_item_code",
     "parse_music_playlist",
 ]

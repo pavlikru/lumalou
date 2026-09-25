@@ -19,8 +19,7 @@ It is `None` before connection and after invalidation. Store it privately after
 user confirmation, then supply it on subsequent clients to reject a different
 device before any SESSION/TX writes. Do not display or publish it in diagnostics.
 This identifies a signed key, not a SKU, and is not proof of live key possession.
-The legacy `expected_factory_item_code` option remains available but is not
-required; without it, the serial suffix is not decoded.
+No model code or serial suffix is decoded or exposed by the identity API.
 The factory has the normal Bleak constructor shape:
 `factory(device, disconnected_callback=callback)` and returns a transport with
 async `connect`, `disconnect`, `start_notify`, `read_gatt_char`, and

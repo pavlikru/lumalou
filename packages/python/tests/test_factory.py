@@ -10,7 +10,6 @@ from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
 from lumalou import (
     InvalidFactoryTokenError,
     parse_factory_device_fingerprint,
-    parse_factory_item_code,
 )
 
 
@@ -77,40 +76,24 @@ def _signed_token(
     return bytes(token), {key_id: public_key[1:]}
 
 
-def test_valid_signature_returns_all_six_normalized_item_characters() -> None:
-    token, keys = _signed_token(b"ABC12 ")
-    assert parse_factory_item_code(token, keys=keys) == "abc12 "
-    assert (
-        parse_factory_item_code(token, keys=keys, supported_codes={"abc12 "})
-        == "abc12 "
-    )
-
-
-def test_signed_but_unsupported_code_is_rejected() -> None:
-    token, keys = _signed_token()
-    with pytest.raises(InvalidFactoryTokenError, match="unsupported factory item code"):
-        parse_factory_item_code(token, keys=keys, supported_codes={"other1"})
-    assert parse_factory_item_code(token, keys=keys) == "abc123"
-
-
 def test_unknown_signed_key_id_and_version_are_rejected() -> None:
     token, keys = _signed_token(key_id=13)
     with pytest.raises(InvalidFactoryTokenError, match="unknown or invalid"):
-        parse_factory_item_code(token)
-    assert parse_factory_item_code(token, keys=keys) == "abc123"
+        parse_factory_device_fingerprint(token)
+    assert len(parse_factory_device_fingerprint(token, keys=keys)) == 64
     changed_version = bytearray(token)
     changed_version[0] = 11
     with pytest.raises(
         InvalidFactoryTokenError, match="unsupported factory token version"
     ):
-        parse_factory_item_code(bytes(changed_version), keys=keys)
+        parse_factory_device_fingerprint(bytes(changed_version), keys=keys)
 
 
 @pytest.mark.parametrize("length", [0, 191, 193])
 def test_token_length_must_be_exact(length: int) -> None:
     token, keys = _signed_token()
     with pytest.raises(InvalidFactoryTokenError, match="invalid length"):
-        parse_factory_item_code(
+        parse_factory_device_fingerprint(
             token[:length] if length < 192 else token + b"x", keys=keys
         )
 
@@ -121,49 +104,52 @@ def test_tampered_signed_bytes_or_signature_are_rejected(offset: int) -> None:
     altered = bytearray(token)
     altered[offset] ^= 1
     with pytest.raises(InvalidFactoryTokenError):
-        parse_factory_item_code(bytes(altered), keys=keys)
+        parse_factory_device_fingerprint(bytes(altered), keys=keys)
 
 
 def test_unknown_and_malformed_manufacturing_keys_are_rejected() -> None:
     token, keys = _signed_token()
     with pytest.raises(InvalidFactoryTokenError, match="signature is invalid"):
-        parse_factory_item_code(token)  # Synthetic signature is not from Mattel.
+        parse_factory_device_fingerprint(
+            token
+        )  # Synthetic signature is not from Mattel.
     with pytest.raises(InvalidFactoryTokenError, match="unknown or invalid"):
-        parse_factory_item_code(token, keys={})
+        parse_factory_device_fingerprint(token, keys={})
     with pytest.raises(InvalidFactoryTokenError, match="unknown or invalid"):
-        parse_factory_item_code(token, keys={12: b"x" * 63})
+        parse_factory_device_fingerprint(token, keys={12: b"x" * 63})
     with pytest.raises(InvalidFactoryTokenError, match="invalid manufacturing key"):
-        parse_factory_item_code(token, keys={12: b"\x00" * 64})
+        parse_factory_device_fingerprint(token, keys={12: b"\x00" * 64})
     assert len(keys[12]) == 64
 
 
 @pytest.mark.parametrize("serial_prefix", [b"\xff" + b"B" * 17, b"B" * 17 + b"\x00"])
-def test_bad_serial_encoding_is_rejected_after_valid_signature(
+def test_serial_encoding_is_not_interpreted_after_valid_signature(
     serial_prefix: bytes,
 ) -> None:
     token, keys = _signed_token(serial_prefix=serial_prefix)
-    with pytest.raises(InvalidFactoryTokenError, match="printable ASCII"):
-        parse_factory_item_code(token, keys=keys)
+    assert len(parse_factory_device_fingerprint(token, keys=keys)) == 64
 
 
 def test_signed_invalid_device_key_is_rejected() -> None:
     token, keys = _signed_token(device_key=b"\x00" * 33)
     with pytest.raises(InvalidFactoryTokenError, match="device key is invalid"):
-        parse_factory_item_code(token, keys=keys)
+        parse_factory_device_fingerprint(token, keys=keys)
 
 
 def test_salt_is_outside_manufacturing_signature() -> None:
     token, keys = _signed_token()
     different_salt = token[:188] + b"\xaa\xbb\xcc\xdd"
-    assert parse_factory_item_code(different_salt, keys=keys) == "abc123"
+    assert parse_factory_device_fingerprint(
+        different_salt, keys=keys
+    ) == parse_factory_device_fingerprint(token, keys=keys)
 
 
 def test_error_and_logs_do_not_expose_synthetic_serial(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    token, keys = _signed_token(serial_prefix=b"SECRET0123456789XY")
+    token, _keys = _signed_token(serial_prefix=b"SECRET0123456789XY")
     with pytest.raises(InvalidFactoryTokenError) as error:
-        parse_factory_item_code(token, keys=keys, supported_codes=set())
+        parse_factory_device_fingerprint(token, keys={})
     assert "SECRET" not in str(error.value)
     assert not caplog.records
 
@@ -171,11 +157,4 @@ def test_error_and_logs_do_not_expose_synthetic_serial(
 def test_non_bytes_input_is_rejected() -> None:
     token, keys = _signed_token()
     with pytest.raises(TypeError, match="must be bytes"):
-        parse_factory_item_code(bytearray(token), keys=keys)  # type: ignore[arg-type]
-
-
-@pytest.mark.parametrize("codes", ["abc123", {"ABC123"}, {"abc12"}, {"abc12é"}])
-def test_supported_codes_must_be_exact_six_character_ascii_values(codes) -> None:
-    token, keys = _signed_token()
-    with pytest.raises(ValueError, match="six-character lowercase ASCII"):
-        parse_factory_item_code(token, keys=keys, supported_codes=codes)
+        parse_factory_device_fingerprint(bytearray(token), keys=keys)  # type: ignore[arg-type]

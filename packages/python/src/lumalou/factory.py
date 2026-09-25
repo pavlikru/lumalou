@@ -1,4 +1,4 @@
-"""Pure signed-field verification and item-code decoding for a FACTORY token.
+"""Pure signed-field verification and device-key identity for a FACTORY token.
 
 The 192-byte layout and manufacturing public key are documented by the
 independent MIT-licensed gld09-control project at commit
@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping
-from collections.abc import Set as AbstractSet
 from types import MappingProxyType
 
 from cryptography.exceptions import InvalidSignature
@@ -20,10 +19,6 @@ from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
 FACTORY_TOKEN_LENGTH = 192
 _SIGNED_END = 124
 _SIGNATURE_END = 188
-_SERIAL_START = 1
-_SERIAL_END = 25
-_ITEM_START = 19
-_ITEM_END = 25
 _DEVICE_KEY_START = 25
 _DEVICE_KEY_END = 58
 _KEY_ID_START = 65
@@ -45,49 +40,6 @@ class InvalidFactoryTokenError(ValueError):
     """The FACTORY token cannot be authenticated or safely decoded."""
 
 
-def parse_factory_item_code(
-    token: bytes,
-    *,
-    keys: Mapping[int, bytes] | None = None,
-    supported_codes: AbstractSet[str] | None = None,
-) -> str:
-    """Verify FACTORY signed bytes and return the exact six-character item field.
-
-    The returned code is lowercase ASCII, with all six characters retained.
-    No padding convention or GLD09 mapping is assumed. ``supported_codes``
-    optionally enforces exact lowercase six-character matches. ``keys`` may
-    replace the trusted public-key table for a different verified source or
-    synthetic tests; callers must authenticate that source themselves.
-
-    The four-byte salt after the signature is outside the signed region. This
-    function authenticates only the signed fields and does not use the salt.
-
-    Neither token nor serial is included in errors or returned data.
-    """
-    if not isinstance(token, bytes):
-        raise TypeError("factory token must be bytes")
-    if supported_codes is not None and (
-        isinstance(supported_codes, (str, bytes))
-        or any(
-            not isinstance(code, str)
-            or len(code) != _ITEM_END - _ITEM_START
-            or not code.isascii()
-            or code != code.lower()
-            or any(not 0x20 <= ord(character) <= 0x7E for character in code)
-            for code in supported_codes
-        )
-    ):
-        raise ValueError("supported item codes must be six-character lowercase ASCII")
-    _verify_factory_device_key(token, keys=keys)
-    serial_bytes = token[_SERIAL_START:_SERIAL_END]
-    if any(byte < 0x20 or byte > 0x7E for byte in serial_bytes):
-        raise InvalidFactoryTokenError("factory token serial is not printable ASCII")
-    item_code = token[_ITEM_START:_ITEM_END].decode("ascii").lower()
-    if supported_codes is not None and item_code not in supported_codes:
-        raise InvalidFactoryTokenError("unsupported factory item code")
-    return item_code
-
-
 def parse_factory_device_fingerprint(
     token: bytes, *, keys: Mapping[int, bytes] | None = None
 ) -> str:
@@ -95,8 +47,9 @@ def parse_factory_device_fingerprint(
 
     The 64 lowercase hex characters identify a device key, not a model or SKU.
     Serial fields are neither decoded nor returned. Salt and signature changes
-    do not change this identity. ``keys`` has the same trust requirements as
-    :func:`parse_factory_item_code`. Treat the fingerprint as a private stable
+    do not change this identity. ``keys`` may replace the trusted public-key
+    table for another verified source or synthetic tests; callers must
+    authenticate that source themselves. Treat the fingerprint as a private stable
     identifier, not anonymous telemetry. It does not prove live key possession.
     """
     return hashlib.sha256(_verify_factory_device_key(token, keys=keys)).hexdigest()

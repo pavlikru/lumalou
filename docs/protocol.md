@@ -41,11 +41,7 @@ or returns a serial suffix. The 64-character lowercase hex fingerprint remains
 stable across salt/signature changes and is a private per-key identifier, not
 a product-model claim or proof of live key possession.
 
-The legacy Python `parse_factory_item_code` helper validates an exact 192-byte FACTORY
-token and verifies its ECDSA P-256/SHA-256 manufacturing signature before
-returning the signed six-byte item field as lowercase ASCII. It preserves all
-six characters; no GLD09 padding or item-code mapping has been established.
-An optional exact allowlist rejects unsupported item values. The source for
+Verification uses ECDSA P-256/SHA-256. The source for
 the public verification key and field offsets is the independent MIT-licensed
 [`kvdb/gld09-control` project](https://github.com/kvdb/gld09-control/tree/6e3aff894b0065b760ba44f43a36c7e9988cead9),
 with attribution in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).
@@ -54,14 +50,14 @@ the client authenticates the device fingerprint on every connection. A token wit
 or malformed signed key is rejected before notification,
 key derivation, or any SESSION/TX write. Callers such as Home Assistant can
 pass `expected_device_fingerprint` to bind the session to one signed device key;
-a mismatch aborts and releases the transport. `expected_factory_item_code`
-remains an optional legacy item-field check, not a per-device binding.
+a mismatch aborts and releases the transport. No model code or serial suffix
+is decoded or exposed by the identity API.
 
 1. Read and authenticate the MFG token from **factory**. It contains the
    device's compressed P-256 public key at bytes `[25:58]` and a 4-byte salt
    in the last 4 bytes.
 2. If the caller supplied an expected device fingerprint, require an exact
-   match with the authenticated key hash. Check any legacy item pin as well.
+   match with the authenticated key hash.
 3. Generate an ephemeral P-256 keypair. Compute
    `shared = ECDH(app_priv, device_pub)` (X coord, 32 B).
 4. Derive the session key by stretching: 100 rounds of AES-128-CTR over `shared`, each round using
