@@ -6,6 +6,15 @@
 > `lumalou`) and carries the changes proposed in
 > [stramanu/lumalou#2](https://github.com/stramanu/lumalou/pull/2). Badges and
 > links below refer to the upstream project.
+>
+> Where to report problems:
+>
+> - Bugs in `lumalou-gld09`: <https://github.com/pavlikru/lumalou/issues>
+> - The Home Assistant integration:
+>   <https://github.com/pavlikru/ha-lumalou/issues>
+> - The original project (upstream `lumalou` packages, web app, other devices):
+>   [stramanu/lumalou](https://github.com/stramanu/lumalou/issues)
+> - Security problems: privately, see [SECURITY.md](SECURITY.md)
 
 [![CI](https://github.com/stramanu/lumalou/actions/workflows/ci.yml/badge.svg)](https://github.com/stramanu/lumalou/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/lumalou?label=pypi&cacheSeconds=3600)](https://pypi.org/project/lumalou/)
