@@ -65,7 +65,7 @@ from .responses import (
 )
 from .schedules import RoutineTaskState, RoutineTaskStatus
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 __all__ = [
     "MANUFACTURER_ID",

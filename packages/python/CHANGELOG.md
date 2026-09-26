@@ -4,6 +4,38 @@ All notable changes to the `lumalou-gld09` distribution (a fork of
 [stramanu/lumalou](https://github.com/stramanu/lumalou)) are documented here.
 The import package remains `lumalou`.
 
+## 0.3.1 - 2026-09-25
+
+The library API and the wire behaviour are unchanged.
+
+### Security
+
+- `lumalou send <hex>` no longer sends on its own. It prints the decoded
+  opcode (for example `opcode 0x3c SET_LIGHT_COLOR, args 05`) and sends only
+  with `--yes`. The unsafe opcodes `0x52` (`SET_TIME_PRESCALER`) and `0x34`
+  (`SEND_PAIRING_COMPLETE`) are still always refused. The whole-device writes
+  `0x01` (`SET_GLOBAL_STATE`) and `0x03` (`SET_GLOBAL_ON`), and opcodes that
+  are not in `spec/protocol.json` (firmware and OTA commands are not), now
+  also need `--dangerous`. Invalid hex is reported instead of raising a
+  traceback. Scripts that called `lumalou send <hex>` must add `--yes`.
+- Added `SECURITY.md`: report vulnerabilities privately through GitHub
+  private vulnerability reporting on pavlikru/lumalou.
+
+### Documentation
+
+- The README (also the PyPI description) says where to report problems:
+  `lumalou-gld09` bugs to pavlikru/lumalou, the Home Assistant integration to
+  pavlikru/ha-lumalou, the original project to stramanu/lumalou. It also
+  carries the independence and trademark disclaimer and uses absolute links,
+  which work on PyPI.
+- Project URLs add `Issues` and the Home Assistant integration. `Changelog`
+  points at the `gld09` branch, the fork's default branch for releases.
+
+### CI
+
+- Tests run on Python 3.10 to 3.14. The package classifiers list each
+  supported version.
+
 ## 0.3.0 - 2026-09-25
 
 ### Behaviour aligned with upstream
