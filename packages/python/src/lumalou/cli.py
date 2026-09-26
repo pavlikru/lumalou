@@ -6,7 +6,7 @@ import argparse
 import asyncio
 import json
 
-from ._generated import COMMANDS, Color
+from ._generated import COMMANDS, DAY_ROUTINE, Color
 from .client import LumalouClient
 
 _COLORS = {c.name.lower(): int(c) for c in Color}
@@ -23,18 +23,63 @@ _AUDIO = {
 
 
 # spec/protocol.json "unsafeCommands"; the deployed web client refuses them too.
+# `lumalou send` never sends these, not even with --dangerous.
 _UNSAFE_OPCODES = frozenset(
     {COMMANDS["SET_TIME_PRESCALER"], COMMANDS["SEND_PAIRING_COMPLETE"]}
 )
 
+# Whole-device writes: SET_GLOBAL_STATE overwrites every setting at once and
+# SET_GLOBAL_ON switches the whole device (`lumalou soother` is the typed way).
+# `lumalou send` needs --dangerous for these.
+_DANGEROUS_OPCODES = frozenset(
+    {COMMANDS["SET_GLOBAL_STATE"], COMMANDS["SET_GLOBAL_ON"]}
+)
 
-def _raw_command(text: str) -> bytes:
-    data = bytes.fromhex(text)
+_OPCODE_NAMES = {code: name for name, code in COMMANDS.items()}
+for _kind, _days in DAY_ROUTINE.items():
+    for _day, _code in _days.items():
+        _OPCODE_NAMES[_code] = f"{_kind}_{_day.upper()}_ROUTINE"
+
+
+def _opcode_name(opcode: int) -> str:
+    return _OPCODE_NAMES.get(opcode, "UNKNOWN")
+
+
+def _raw_command(text: str, *, dangerous: bool = False) -> bytes:
+    """Parse and vet `lumalou send` input before any Bluetooth I/O.
+
+    Opcodes outside spec/protocol.json (firmware/OTA commands are not in it)
+    and whole-device writes are refused unless ``dangerous`` is true. The
+    spec's unsafe opcodes are always refused.
+    """
+    try:
+        data = bytes.fromhex(text)
+    except ValueError:
+        raise SystemExit(f"not a hex string: {text!r}") from None
     if not data:
         raise SystemExit("nothing to send")
-    if data[0] in _UNSAFE_OPCODES:
-        raise SystemExit(f"refusing unsafe opcode 0x{data[0]:02x}")
+    opcode = data[0]
+    if opcode in _UNSAFE_OPCODES:
+        raise SystemExit(
+            f"refusing unsafe opcode 0x{opcode:02x} ({_opcode_name(opcode)})"
+        )
+    if not dangerous:
+        if opcode in _DANGEROUS_OPCODES:
+            raise SystemExit(
+                f"opcode 0x{opcode:02x} ({_opcode_name(opcode)}) is a whole-device "
+                "write; pass --dangerous to send it anyway"
+            )
+        if opcode not in _OPCODE_NAMES:
+            raise SystemExit(
+                f"opcode 0x{opcode:02x} is not in the protocol spec; "
+                "pass --dangerous to send it anyway"
+            )
     return data
+
+
+def _describe_raw(data: bytes) -> str:
+    args = data[1:].hex() or "(none)"
+    return f"opcode 0x{data[0]:02x} {_opcode_name(data[0])}, args {args}"
 
 
 def _color_id(v):
@@ -65,7 +110,12 @@ async def _run(args):
             )
         return
 
-    raw = _raw_command(args.hex) if args.cmd == "send" else None
+    raw = None
+    if args.cmd == "send":
+        raw = _raw_command(args.hex, dangerous=args.dangerous)
+        print(_describe_raw(raw))
+        if not args.yes:
+            raise SystemExit("not sent: add --yes to send these bytes")
     address = await _resolve_address(args.address)
     async with LumalouClient(address) as luma:
         if args.cmd == "state":
@@ -138,8 +188,23 @@ def build_parser():
 
     sub.add_parser("time", help="sync the device clock")
 
-    se = sub.add_parser("send", help="send raw app_data in hex")
+    se = sub.add_parser(
+        "send",
+        help="send raw app_data in hex (needs --yes)",
+        description=(
+            "Send raw app_data (opcode + args). Prints the decoded opcode and "
+            "sends only with --yes. Unsafe opcodes (0x52, 0x34) are always "
+            "refused; whole-device writes (0x01, 0x03) and opcodes outside "
+            "the protocol spec also need --dangerous."
+        ),
+    )
     se.add_argument("hex", help="e.g. 3c05 = blue light")
+    se.add_argument("-y", "--yes", action="store_true", help="actually send the bytes")
+    se.add_argument(
+        "--dangerous",
+        action="store_true",
+        help="allow whole-device writes and opcodes outside the spec",
+    )
     return p
 
 
